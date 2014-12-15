@@ -112,21 +112,22 @@ void handle_program_change(struct dioxide *d, snd_seq_ev_ctrl_t control) {
     switch (control.value) {
         /* C18 */
         case 0:
-            if (d->metal == &uranium) {
-                d->metal = &titanium;
-            } else if (d->metal == &titanium) {
-                d->metal = &uranium;
-            }
+            d->metal = &titanium;
+            printf("Instrument: Titanium\n");
             break;
         /* C19 */
         case 1:
+            d->metal = &uranium;
+            printf("Instrument: Uranium\n");
             break;
         /* C20 */
         case 2:
-            d->pitch_wheel_config = ++d->pitch_wheel_config % WHEEL_MAX;
+            d->metal = &lead;
+            printf("Instrument: Lead\n");
             break;
         /* C21 */
         case 3:
+            d->pitch_wheel_config = ++d->pitch_wheel_config % WHEEL_MAX;
             break;
         default:
             printf("Program change %d\n", control.value);

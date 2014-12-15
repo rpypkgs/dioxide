@@ -55,7 +55,7 @@ void setup_sound(struct dioxide *d) {
 
     frame_length = 1000 * 1000 * actual.samples / actual.freq;
 
-    printf("Initialized basic synth parameters, frame length is %d usec\n",
+    printf("Initialized basic synth parameters, frame length is %ld usec\n",
         frame_length);
 
     d->front_buffer = malloc(actual.samples * sizeof(float));
@@ -177,7 +177,7 @@ void write_sound(void *private, Uint8 *stream, int len) {
     timediff = now.tv_usec - then.tv_usec;
 
     if (timediff > frame_length) {
-        printf("Long frame: %d usec\n", timediff);
+        printf("Long frame: %ldus (%ldus alloted)\n", timediff, frame_length);
     }
 }
 
