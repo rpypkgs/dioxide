@@ -2,6 +2,7 @@
 #include <stdio.h>
 
 #include "dioxide.h"
+#include "timer.h"
 
 static struct lfof growlbrato = {
     .rate = 80,
@@ -12,10 +13,16 @@ static struct lfof growlbrato = {
 
 void generate_lead(struct dioxide *d, struct note *note, float *buffer, unsigned size)
 {
+    static unsigned should_time = 0;
     float step, growl_adjustment, pitch, accumulator;
     unsigned i, j, max_j;
+    struct timeval then;
 
     for (i = 0; i < size; i++) {
+        if (!should_time) {
+            gettimeofday(&then, NULL);
+        }
+
         accumulator = 0;
 
         d->metal->adsr(d, note);
@@ -59,6 +66,12 @@ void generate_lead(struct dioxide *d, struct note *note, float *buffer, unsigned
 
         *buffer += accumulator * note->adsr_volume;
         buffer++;
+
+        if (!should_time) {
+            should_time += 10000;
+            printf("Took %ldus to run a note\n", us(then));
+        }
+        should_time--;
     }
 }
 
