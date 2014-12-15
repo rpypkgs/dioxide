@@ -6,6 +6,7 @@
 #include <sys/time.h>
 
 #include "dioxide.h"
+#include "timer.h"
 
 static int time_to_quit = 0;
 static unsigned long frame_length = 0;
@@ -167,14 +168,7 @@ void write_sound(void *private, Uint8 *stream, int len) {
         buf++;
     }
 
-    gettimeofday(&now, NULL);
-
-    while (now.tv_sec != then.tv_sec) {
-        now.tv_sec--;
-        now.tv_usec += 1000 * 1000;
-    }
-
-    timediff = now.tv_usec - then.tv_usec;
+    timediff = us(then);
 
     if (timediff > frame_length) {
         printf("Long frame: %ldus (%ldus alloted)\n", timediff, frame_length);
