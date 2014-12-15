@@ -2,69 +2,58 @@
 #include <stdio.h>
 
 #include "dioxide.h"
-#include "lowpass.h"
 #include "timer.h"
 
-static struct lfof growlbrato = {
-    .rate = 80,
-    .center = 1,
-    /* six_cents - 1 */
-    .amplitude = 0.0034717485095028,
+/* These are technically twice the correct frequency. It makes the maths a bit
+ * easier conceptually. */
+static float drawbar_pitches[9] = {
+    0.5,
+    1.5,
+    1,
+    2,
+    3,
+    4,
+    5,
+    6,
+    8,
+};
+
+static float pots[] = {
+    1.0 / 256.0,
+    1.0 / 128.0,
+    1.0 / 64.0,
+    1.0 / 32.0,
+    1.0 / 16.0,
+    1.0 / 8.0,
+    1.0 / 4.0,
+    1.0 / 2.0,
+    1.0 / 1.0,
 };
 
 void generate_lead(struct dioxide *d, struct note *note, float *buffer, unsigned size)
 {
-    static unsigned init = 0;
-    static struct lowpass lp;
-    
-    static unsigned should_time = 0;
-    float step, growl_adjustment, pitch, accumulator;
-    unsigned i, j, max_j;
+    static unsigned t = 0;
     struct timeval then;
 
-    if (!init) {
-        init = 1;
-        setup_lowpass(&lp, 0.0001);
-    }
+    float step, accumulator;
+    unsigned i, j;
+
+    step = 2 * M_PI * note->pitch * d->inverse_sample_rate;
 
     for (i = 0; i < size; i++) {
-        if (!should_time) {
+        if (!t) {
             gettimeofday(&then, NULL);
         }
 
-        accumulator = 0;
+        accumulator = 0.0;
 
         d->metal->adsr(d, note);
 
-        if (note->adsr_phase < ADSR_SUSTAIN) {
-            growlbrato.rate = 80;
-        } else {
-            growlbrato.rate = 5;
-        }
-
-        pitch = note->pitch * step_lfof(d, &growlbrato, 1);
-
-        step = 2 * M_PI * pitch * d->inverse_sample_rate;
-
-        /* Weird things I've discovered.
-         * BLITs aren't necessary. This is strictly additive.
-         *
-         * If the number of additions is above 120 or so, stuff gets really
-         * shitty-sounding. The magic number of 129 should suffice for most
-         * things.
-         *
-         * If the number of additions is even, everything goes to shit. This
-         * helped: http://www.music.mcgill.ca/~gary/307/week5/bandlimited.html
-         */
-        max_j = d->spec.freq / note->pitch / 3;
-        if (max_j > 7) {
-            max_j = 7;
-        } else if (!(max_j % 2)) {
-            max_j--;
-        }
-
-        for (j = 1; j < max_j; j++) {
-            accumulator += sinf(note->phase * j) / j;
+        for (j = 0; j < 9; j++) {
+            if (d->drawbars[j]) {
+                accumulator += pots[d->drawbars[j]] *
+                    sinf(note->phase * drawbar_pitches[j]);
+            }
         }
 
         note->phase += step;
@@ -73,35 +62,26 @@ void generate_lead(struct dioxide *d, struct note *note, float *buffer, unsigned
             note->phase -= 2 * M_PI;
         }
 
-        accumulator = run_lowpass(&lp, accumulator);
-        *buffer += accumulator * note->adsr_volume;
+        /* Divide by the number of drawbars. */
+        *buffer += accumulator / 9.0 * note->adsr_volume;
         buffer++;
 
-        if (!should_time) {
-            should_time += 10000;
-            printf("Took %ldus to run %f\n", us(then), pitch);
+        if (!t) {
+            t = 100000;
+            printf("took %ldus\n", us(then));
         }
-        should_time--;
+        t--;
     }
 }
 
 void adsr_lead(struct dioxide *d, struct note *note) {
-    static float peak = 1.0, sustain = 0.4;
+    static float peak = 1.0;
     switch (note->adsr_phase) {
         case ADSR_ATTACK:
             if (note->adsr_volume < peak) {
                 note->adsr_volume += d->inverse_sample_rate / d->attack_time;
             } else {
                 note->adsr_volume = peak;
-                note->adsr_phase = ADSR_DECAY;
-            }
-            break;
-        case ADSR_DECAY:
-            if (note->adsr_volume > sustain) {
-                note->adsr_volume -= (peak - sustain) * d->inverse_sample_rate
-                    / d->decay_time;
-            } else {
-                note->adsr_volume = sustain;
                 note->adsr_phase = ADSR_SUSTAIN;
             }
             break;
@@ -109,7 +89,7 @@ void adsr_lead(struct dioxide *d, struct note *note) {
             break;
         case ADSR_RELEASE:
             if (note->adsr_volume > 0.0) {
-                note->adsr_volume -= sustain * d->inverse_sample_rate
+                note->adsr_volume -= peak * d->inverse_sample_rate
                     / d->release_time;
             } else {
                 note->adsr_volume = 0.0;
