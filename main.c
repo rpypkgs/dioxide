@@ -24,7 +24,7 @@ void setup_sound(struct dioxide *d) {
     double temp;
     unsigned i;
 
-    wanted->freq = 48000;
+    wanted->freq = 44100;
     wanted->format = AUDIO_S16;
     wanted->channels = 1;
     wanted->samples = 512;
