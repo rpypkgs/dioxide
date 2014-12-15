@@ -2,6 +2,7 @@
 #include <stdio.h>
 
 #include "dioxide.h"
+#include "lowpass.h"
 #include "timer.h"
 
 static struct lfof growlbrato = {
@@ -11,79 +12,10 @@ static struct lfof growlbrato = {
     .amplitude = 0.0034717485095028,
 };
 
-struct lowpass {
-    float x, y, a, b;
-};
-
-void setup_lowpass(struct lowpass *lp, double cutoff) {
-    /* This is a one-time setup; we can afford to use doubles here. */
-    double omega;
-
-    lp->x = lp->y = 0;
-
-    omega = atan(M_PI * cutoff);
-    lp->a = -(1.0 - omega) / (1.0 + omega);
-    lp->b = (1.0 - lp->a) / 2.0;
-}
-
-float run_lowpass(struct lowpass *lp, float input) {
-    float rv = lp->b * (input + lp->x) - lp->a * lp->y;
-    lp->x = input;
-    lp->y = rv;
-    return rv;
-}
-
-struct blit {
-    float phase, attenuation, frequency, period, rolloff, rolloffPower;
-    unsigned partials;
-    struct lowpass lp;
-};
-
-void setup_blit(struct blit *blit, double attenuation, double cutoff) {
-    /* This is a one-time setup; we can afford to use doubles here. */
-    blit->phase = blit->frequency = blit->period = 0.0;
-    blit->attenuation = attenuation;
-    setup_lowpass(&blit->lp, cutoff);
-}
-
-float run_blit(struct blit *blit, float frequency) {
-    float half_period, beta, beta_partials, cos_beta, numerator, denominator;
-    float result;
-
-    if (blit->phase >= 1.0 || blit->frequency == 0.0) {
-        /* New cycle. Change the frequency and recalculate. */
-        if (blit->phase >= 1.0) {
-            blit->phase -= 1.0;
-        }
-
-        blit->frequency = frequency;
-        blit->period = 1.0 / frequency;
-        half_period = blit->period / 2.0;
-        blit->partials = 1 + floorf(half_period);
-
-        /* Recalculate rolloff. */
-        blit->rolloff = powf(blit->attenuation, 1.0 / half_period);
-        blit->rolloffPower = powf(blit->rolloff, blit->partials);
-    }
-
-    beta = M_PI * 2 * blit->phase;
-    beta_partials = beta * blit->partials;
-    cos_beta = cosf(beta);
-
-    numerator = 1.0 - blit->rolloffPower * cosf(beta_partials)
-        - blit->rolloff * (cos_beta - blit->rolloffPower * cosf(beta_partials - beta));
-    denominator = blit->period * (1.0 + blit->rolloff * (-2.0 * cos_beta + blit->rolloff));
-
-    blit->phase += blit->frequency;
-    result = numerator / denominator - blit->frequency;
-
-    return run_lowpass(&blit->lp, result);
-}
-
 void generate_lead(struct dioxide *d, struct note *note, float *buffer, unsigned size)
 {
     static unsigned init = 0;
-    static struct blit blit;
+    static struct lowpass lp;
     
     static unsigned should_time = 0;
     float step, growl_adjustment, pitch, accumulator;
@@ -92,7 +24,7 @@ void generate_lead(struct dioxide *d, struct note *note, float *buffer, unsigned
 
     if (!init) {
         init = 1;
-        setup_blit(&blit, 0.5, 0.0001);
+        setup_lowpass(&lp, 0.0001);
     }
 
     for (i = 0; i < size; i++) {
@@ -112,7 +44,6 @@ void generate_lead(struct dioxide *d, struct note *note, float *buffer, unsigned
 
         pitch = note->pitch * step_lfof(d, &growlbrato, 1);
 
-#if 0
         step = 2 * M_PI * pitch * d->inverse_sample_rate;
 
         /* Weird things I've discovered.
@@ -141,15 +72,14 @@ void generate_lead(struct dioxide *d, struct note *note, float *buffer, unsigned
         while (note->phase > 2 * M_PI) {
             note->phase -= 2 * M_PI;
         }
-#endif
 
-        accumulator = run_blit(&blit, pitch);
+        accumulator = run_lowpass(&lp, accumulator);
         *buffer += accumulator * note->adsr_volume;
         buffer++;
 
         if (!should_time) {
             should_time += 10000;
-            printf("Took %ldus to run a note\n", us(then));
+            printf("Took %ldus to run %f\n", us(then), pitch);
         }
         should_time--;
     }
