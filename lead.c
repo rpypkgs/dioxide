@@ -3,7 +3,7 @@
 
 #include "dioxide.h"
 
-static struct lfo growlbrato = {
+static struct lfof growlbrato = {
     .rate = 80,
     .center = 1,
     /* six_cents - 1 */
@@ -26,7 +26,7 @@ void generate_lead(struct dioxide *d, struct note *note, float *buffer, unsigned
             growlbrato.rate = 5;
         }
 
-        pitch = note->pitch * step_lfo(d, &growlbrato, 1);
+        pitch = note->pitch * step_lfof(d, &growlbrato, 1);
 
         step = 2 * M_PI * pitch * d->inverse_sample_rate;
 

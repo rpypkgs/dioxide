@@ -13,6 +13,14 @@ struct lfo {
     double amplitude;
 };
 
+struct lfof {
+    float phase;
+
+    float rate;
+    float center;
+    float amplitude;
+};
+
 struct ladspa_plugin {
     void *dl_handle;
 
@@ -101,6 +109,7 @@ struct dioxide {
 };
 
 double step_lfo(struct dioxide *d, struct lfo *lfo, unsigned count);
+float step_lfof(struct dioxide *d, struct lfof *lfo, unsigned count);
 
 void setup_plugins(struct dioxide *d);
 void hook_plugins(struct dioxide *d);
@@ -113,4 +122,4 @@ void setup_sequencer(struct dioxide *d);
 void poll_sequencer(struct dioxide *d);
 void solicit_connections(struct dioxide *d);
 
-struct element uranium, titanium;
+struct element uranium, titanium, lead;
