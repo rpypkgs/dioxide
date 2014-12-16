@@ -2,6 +2,7 @@
 #include <stdio.h>
 
 #include "dioxide.h"
+#include "nsinf.h"
 #include "timer.h"
 
 /* These are technically twice the correct frequency. It makes the maths a bit
@@ -38,7 +39,7 @@ void generate_lead(struct dioxide *d, struct note *note, float *buffer, unsigned
     float step, accumulator;
     unsigned i, j;
 
-    step = 2 * M_PI * note->pitch * d->inverse_sample_rate;
+    step = note->pitch * d->inverse_sample_rate;
 
     for (i = 0; i < size; i++) {
         if (!t) {
@@ -52,14 +53,14 @@ void generate_lead(struct dioxide *d, struct note *note, float *buffer, unsigned
         for (j = 0; j < 9; j++) {
             if (d->drawbars[j]) {
                 accumulator += pots[d->drawbars[j]] *
-                    sinf(note->phase * drawbar_pitches[j]);
+                    nsinf(note->phase * drawbar_pitches[j]);
             }
         }
 
         note->phase += step;
 
-        while (note->phase > 2 * M_PI) {
-            note->phase -= 2 * M_PI;
+        while (note->phase >= 1.0) {
+            note->phase -= 1.0;
         }
 
         /* Divide by the number of drawbars. */
