@@ -2,6 +2,7 @@
 #include <stdio.h>
 
 #include "dioxide.h"
+#include "nsinf.h"
 
 /* These are technically twice the correct frequency. It makes the maths a bit
  * easier conceptually. */
@@ -17,6 +18,18 @@ static float drawbar_pitches[9] = {
     8,
 };
 
+static float pots[] = {
+    1.0 / 256.0,
+    1.0 / 128.0,
+    1.0 / 64.0,
+    1.0 / 32.0,
+    1.0 / 16.0,
+    1.0 / 8.0,
+    1.0 / 4.0,
+    1.0 / 2.0,
+    1.0 / 1.0,
+};
+
 void generate_titanium(struct dioxide *d, struct note *note, float *buffer, unsigned size)
 {
     double step, accumulator;
@@ -25,30 +38,26 @@ void generate_titanium(struct dioxide *d, struct note *note, float *buffer, unsi
     step = 2 * M_PI * note->pitch * d->inverse_sample_rate;
 
     for (i = 0; i < size; i++) {
-        accumulator = 0;
+        accumulator = 0.0f;
         attenuation = 0;
 
         d->metal->adsr(d, note);
 
         for (j = 0; j < 9; j++) {
             if (d->drawbars[j]) {
-                attenuation++;
-                accumulator += (1.0/8.0) * d->drawbars[j] *
-                    sin(note->phase * drawbar_pitches[j]);
+                accumulator += pots[d->drawbars[j]] *
+                    nsinf(note->phase * drawbar_pitches[j]);
             }
-        }
-
-        if (attenuation) {
-            accumulator /= attenuation;
         }
 
         note->phase += step;
 
-        while (note->phase > 2 * M_PI) {
-            note->phase -= 2 * M_PI;
+        while (note->phase >= 1.0) {
+            note->phase -= 1.0;
         }
 
-        *buffer += accumulator * note->adsr_volume;
+        /* Divide by the number of drawbars. */
+        *buffer += accumulator / 9.0 * note->adsr_volume;
         buffer++;
     }
 }
