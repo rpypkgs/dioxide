@@ -21,7 +21,8 @@ float lerp(float x, float y, float t) {
  * If the number of additions is even, everything goes to shit. This helped:
  * http://www.music.mcgill.ca/~gary/307/week5/bandlimited.html
  */
-static float sawtooth[1025];
+static float sawtooth_upper[1025];
+static float sawtooth_lower[1025];
 static unsigned inited = 0;
 
 void setup_uranium() {
@@ -32,9 +33,12 @@ void setup_uranium() {
     }
 
     for (i = 0; i <= 1025; i++) {
-        sawtooth[i] = 0.0f;
-        for (j = 1; j < 19; j++) {
-            sawtooth[i] += nsinf(i * j / 1024.0f) / j;
+        sawtooth_upper[i] = sawtooth_lower[i] = 0.0f;
+        for (j = 1; j < 11; j++) {
+            sawtooth_upper[i] += nsinf(i * j / 1024.0f) / j;
+        }
+        for (j = 1; j < 129; j++) {
+            sawtooth_lower[i] += nsinf(i * j / 1024.0f) / j;
         }
     }
     inited = 1;
@@ -48,7 +52,7 @@ static struct lfo growlbrato = {
 
 void generate_uranium(struct dioxide *d, struct note *note, float *buffer, unsigned size)
 {
-    float step, phase, pitch, t, result;
+    float step, phase, pitch, t, upper, lower, result;
     unsigned i, index;
 
     for (i = 0; i < size; i++) {
@@ -75,7 +79,17 @@ void generate_uranium(struct dioxide *d, struct note *note, float *buffer, unsig
         phase *= 1024.0f;
         index = phase;
         t = phase - index;
-        result = lerp(sawtooth[index], sawtooth[index + 1], t);
+        upper = lerp(sawtooth_upper[index], sawtooth_upper[index + 1], t);
+        lower = lerp(sawtooth_lower[index], sawtooth_lower[index + 1], t);
+
+        /* And interpolate the samples. */
+        if (pitch < 220.0f) {
+            result = lower;
+        } else if (pitch > 3520.0f) {
+            result = upper;
+        } else {
+            result = lerp(lower, upper, (pitch - 220.0f) / 3300.0f);
+        }
 
         *buffer += result * note->adsr_volume;
         buffer++;
