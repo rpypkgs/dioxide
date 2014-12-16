@@ -61,6 +61,8 @@ struct dioxide {
 
     float *front_buffer, *back_buffer;
 
+    float mod_wheel;
+
     float chorus_delay;
 
     float phaser_rate;

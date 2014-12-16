@@ -66,6 +66,7 @@ void handle_controller(struct dioxide *d, snd_seq_ev_ctrl_t control) {
             break;
         /* C10 */
         case 75:
+            d->volume = scale_pot_float(control.value, 0.0, 1.0);
             break;
         /* C11 */
         case 76:
@@ -99,7 +100,7 @@ void handle_controller(struct dioxide *d, snd_seq_ev_ctrl_t control) {
             break;
         /* C34 */
         case 1:
-            d->volume = scale_pot_float(control.value, 0.0, 1.0);
+            d->mod_wheel = scale_pot_float(control.value, 0.001, 1.0);
             break;
         default:
             printf("Controller %d\n", control.param);
