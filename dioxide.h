@@ -1,25 +1,12 @@
+#ifndef DIOXIDE_H
+#define DIOXIDE_H
+
 #include <asoundlib.h>
 
 #include <ladspa.h>
 
 #include "SDL.h"
 #include "SDL_audio.h"
-
-struct lfo {
-    double phase;
-
-    double rate;
-    double center;
-    double amplitude;
-};
-
-struct lfof {
-    float phase;
-
-    float rate;
-    float center;
-    float amplitude;
-};
 
 struct ladspa_plugin {
     void *dl_handle;
@@ -108,9 +95,6 @@ struct dioxide {
     struct element *metal;
 };
 
-double step_lfo(struct dioxide *d, struct lfo *lfo, unsigned count);
-float step_lfof(struct dioxide *d, struct lfof *lfo, unsigned count);
-
 void setup_plugins(struct dioxide *d);
 void hook_plugins(struct dioxide *d);
 void cleanup_plugins(struct dioxide *d);
@@ -123,3 +107,5 @@ void poll_sequencer(struct dioxide *d);
 void solicit_connections(struct dioxide *d);
 
 struct element uranium, titanium, lead;
+
+#endif

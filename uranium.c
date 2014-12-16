@@ -2,17 +2,18 @@
 #include <stdio.h>
 
 #include "dioxide.h"
+#include "lfo.h"
+#include "nsinf.h"
 
 static struct lfo growlbrato = {
     .rate = 80,
     .center = 1,
-    /* six_cents - 1 */
     .amplitude = 0.0034717485095028,
 };
 
 void generate_uranium(struct dioxide *d, struct note *note, float *buffer, unsigned size)
 {
-    double step, growl_adjustment, pitch, accumulator;
+    float step, growl_adjustment, pitch, accumulator;
     unsigned i, j, max_j;
 
     for (i = 0; i < size; i++) {
@@ -28,7 +29,7 @@ void generate_uranium(struct dioxide *d, struct note *note, float *buffer, unsig
 
         pitch = note->pitch * step_lfo(d, &growlbrato, 1);
 
-        step = 2 * M_PI * pitch * d->inverse_sample_rate;
+        step = pitch * d->inverse_sample_rate;
 
         /* Weird things I've discovered.
          * BLITs aren't necessary. This is strictly additive.
@@ -41,20 +42,20 @@ void generate_uranium(struct dioxide *d, struct note *note, float *buffer, unsig
          * helped: http://www.music.mcgill.ca/~gary/307/week5/bandlimited.html
          */
         max_j = d->spec.freq / note->pitch / 3;
-        if (max_j > 129) {
-            max_j = 129;
+        if (max_j > 19) {
+            max_j = 19;
         } else if (!(max_j % 2)) {
             max_j--;
         }
 
         for (j = 1; j < max_j; j++) {
-            accumulator += sin(note->phase * j) / j;
+            accumulator += nsinf(note->phase * j) / j;
         }
 
         note->phase += step;
 
-        while (note->phase > 2 * M_PI) {
-            note->phase -= 2 * M_PI;
+        while (note->phase >= 1.0) {
+            note->phase -= 1.0;
         }
 
         *buffer += accumulator * note->adsr_volume;
