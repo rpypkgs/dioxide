@@ -113,13 +113,11 @@ void handle_program_change(struct dioxide *d, snd_seq_ev_ctrl_t control) {
     switch (control.value) {
         /* C18 */
         case 0:
-            d->metal = &titanium;
-            printf("Instrument: Titanium\n");
+            change_element(d, &titanium);
             break;
         /* C19 */
         case 1:
-            d->metal = &uranium;
-            printf("Instrument: Uranium\n");
+            change_element(d, &uranium);
             break;
         /* C20 */
         case 2:

@@ -62,7 +62,7 @@ void setup_sound(struct dioxide *d) {
     d->front_buffer = malloc(actual.samples * sizeof(float));
     d->back_buffer = malloc(actual.samples * sizeof(float));
 
-    d->metal = &titanium;
+    change_element(d, &titanium);
 }
 
 void close_sound(struct dioxide *d) {
@@ -181,6 +181,18 @@ void update_pitch(struct dioxide *d) {
         note->pitch = 440 * pow(2, (midi - 69.0) / 12.0);
         note = note->next;
     }
+}
+
+void change_element(struct dioxide *d, struct element *element) {
+    struct timeval then;
+
+    gettimeofday(&then, NULL);
+    printf("Changing instrument to %s...\n", element->name);
+    d->metal = element;
+    if (d->metal->setup) {
+        d->metal->setup();
+    }
+    printf("Instrument changed to %s (%ldus)\n", element->name, us(then));
 }
 
 int main() {

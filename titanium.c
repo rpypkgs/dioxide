@@ -89,6 +89,8 @@ void adsr_titanium(struct dioxide *d, struct note *note) {
 }
 
 struct element titanium = {
+    "Titanium",
+    NULL,
     generate_titanium,
     adsr_titanium,
 };

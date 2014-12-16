@@ -39,9 +39,13 @@ struct note {
 };
 
 struct element {
+    char *name;
+    void (*setup)();
     void (*generate)(struct dioxide *d, struct note *note, float *buffer, unsigned count);
     void (*adsr)(struct dioxide *d, struct note *note);
 };
+
+void change_element(struct dioxide *d, struct element *element);
 
 struct dioxide {
     snd_seq_t *seq;

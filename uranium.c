@@ -5,6 +5,41 @@
 #include "lfo.h"
 #include "nsinf.h"
 
+float lerp(float x, float y, float t) {
+    return (1.0f - t) * x + t * y;
+}
+
+
+/* Weird things I've discovered.
+ * BLITs aren't necessary. This is strictly additive.
+ *
+ * If the number of additions is above 120 or so, stuff gets really
+ * shitty-sounding. The magic number of 129 should suffice for most things.
+ *
+ * max_j = d->spec.freq / note->pitch / 3;
+ *
+ * If the number of additions is even, everything goes to shit. This helped:
+ * http://www.music.mcgill.ca/~gary/307/week5/bandlimited.html
+ */
+static float sawtooth[1025];
+static unsigned inited = 0;
+
+void setup_uranium() {
+    int i, j;
+
+    if (inited) {
+        return;
+    }
+
+    for (i = 0; i <= 1025; i++) {
+        sawtooth[i] = 0.0f;
+        for (j = 1; j < 19; j++) {
+            sawtooth[i] += nsinf(i * j / 1024.0f) / j;
+        }
+    }
+    inited = 1;
+}
+
 static struct lfo growlbrato = {
     .rate = 80,
     .center = 1,
@@ -13,12 +48,10 @@ static struct lfo growlbrato = {
 
 void generate_uranium(struct dioxide *d, struct note *note, float *buffer, unsigned size)
 {
-    float step, growl_adjustment, pitch, accumulator;
-    unsigned i, j, max_j;
+    float step, phase, pitch, t, result;
+    unsigned i, index;
 
     for (i = 0; i < size; i++) {
-        accumulator = 0;
-
         d->metal->adsr(d, note);
 
         if (note->adsr_phase < ADSR_SUSTAIN) {
@@ -27,38 +60,24 @@ void generate_uranium(struct dioxide *d, struct note *note, float *buffer, unsig
             growlbrato.rate = 5;
         }
 
+        /* Step forward. */
         pitch = note->pitch * step_lfo(d, &growlbrato, 1);
-
         step = pitch * d->inverse_sample_rate;
 
-        /* Weird things I've discovered.
-         * BLITs aren't necessary. This is strictly additive.
-         *
-         * If the number of additions is above 120 or so, stuff gets really
-         * shitty-sounding. The magic number of 129 should suffice for most
-         * things.
-         *
-         * If the number of additions is even, everything goes to shit. This
-         * helped: http://www.music.mcgill.ca/~gary/307/week5/bandlimited.html
-         */
-        max_j = d->spec.freq / note->pitch / 3;
-        if (max_j > 11) {
-            max_j = 11;
-        } else if (!(max_j % 2)) {
-            max_j--;
+        /* Update phase. */
+        phase = note->phase + step;
+        while (phase >= 1.0) {
+            phase -= 1.0;
         }
+        note->phase = phase;
 
-        for (j = 1; j < max_j; j++) {
-            accumulator += nsinf(note->phase * j) / j;
-        }
+        /* Do our sampling from the wavetable. */
+        phase *= 1024.0f;
+        index = phase;
+        t = phase - index;
+        result = lerp(sawtooth[index], sawtooth[index + 1], t);
 
-        note->phase += step;
-
-        while (note->phase >= 1.0) {
-            note->phase -= 1.0;
-        }
-
-        *buffer += accumulator * note->adsr_volume;
+        *buffer += result * note->adsr_volume;
         buffer++;
     }
 }
@@ -99,6 +118,8 @@ void adsr_uranium(struct dioxide *d, struct note *note) {
 }
 
 struct element uranium = {
+    "Uranium",
+    setup_uranium,
     generate_uranium,
     adsr_uranium,
 };
