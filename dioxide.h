@@ -3,20 +3,8 @@
 
 #include <asoundlib.h>
 
-#include <ladspa.h>
-
 #include "SDL.h"
 #include "SDL_audio.h"
-
-struct ladspa_plugin {
-    void *dl_handle;
-
-    unsigned input, output;
-
-    const LADSPA_Descriptor *desc;
-    LADSPA_Handle handle;
-    struct ladspa_plugin *next;
-};
 
 enum adsr {
     ADSR_ATTACK,
@@ -89,18 +77,8 @@ struct dioxide {
 
     short drawbars[9];
 
-    struct ladspa_plugin *available_plugins;
-    struct ladspa_plugin *plugin_chain;
-
     struct element *metal;
 };
-
-void setup_plugins(struct dioxide *d);
-void hook_plugins(struct dioxide *d);
-void cleanup_plugins(struct dioxide *d);
-
-struct ladspa_plugin* find_plugin_by_id(struct ladspa_plugin *plugin,
-                                        unsigned id);
 
 void setup_sequencer(struct dioxide *d);
 void poll_sequencer(struct dioxide *d);

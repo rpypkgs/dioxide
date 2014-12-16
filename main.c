@@ -83,7 +83,6 @@ void write_sound(void *private, Uint8 *stream, int len) {
     signed short short_temp, *buf = (signed short*)stream;
     struct timeval then, now;
     unsigned long timediff;
-    struct ladspa_plugin *plugin = NULL;
 
     gettimeofday(&then, NULL);
 
@@ -126,30 +125,6 @@ void write_sound(void *private, Uint8 *stream, int len) {
     }
     printf("]\n");
 #endif
-    for (plugin = d->plugin_chain; plugin; plugin = plugin->next) {
-        /* Switch the names of the buffers, so that "samples" is always the
-         * buffer being rendered to. */
-        if (LADSPA_IS_INPLACE_BROKEN(plugin->desc->Properties)) {
-            ftemp = backburner;
-            backburner = samples;
-            samples = ftemp;
-
-            plugin->desc->connect_port(plugin->handle,
-                plugin->input, backburner);
-        } else {
-            plugin->desc->connect_port(plugin->handle, plugin->input, samples);
-        }
-
-        plugin->desc->connect_port(plugin->handle, plugin->output, samples);
-        plugin->desc->run(plugin->handle, len);
-#if 0
-        printf("samples = [\n");
-        for (i = 0; i < len; i++) {
-            printf("%f,\n", samples[i]);
-        }
-        printf("]\n");
-#endif
-    }
 
     for (i = 0; i < len; i++) {
         accumulator = samples[i];
@@ -220,10 +195,7 @@ int main() {
         exit(EXIT_FAILURE);
     }
 
-    /* Sound must be set up before plugins, to obtain sample rate. */
     setup_sound(d);
-    setup_plugins(d);
-    hook_plugins(d);
     setup_sequencer(d);
 
     SDL_PauseAudio(1);
@@ -237,7 +209,6 @@ int main() {
     }
 
     close_sound(d);
-    cleanup_plugins(d);
 
     retval = snd_seq_close(d->seq);
 
