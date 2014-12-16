@@ -42,8 +42,8 @@ void generate_uranium(struct dioxide *d, struct note *note, float *buffer, unsig
          * helped: http://www.music.mcgill.ca/~gary/307/week5/bandlimited.html
          */
         max_j = d->spec.freq / note->pitch / 3;
-        if (max_j > 19) {
-            max_j = 19;
+        if (max_j > 11) {
+            max_j = 11;
         } else if (!(max_j % 2)) {
             max_j--;
         }
