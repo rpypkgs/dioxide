@@ -35,7 +35,7 @@ void generate_titanium(struct dioxide *d, struct note *note, float *buffer, unsi
     double step, accumulator;
     unsigned i, j, attenuation;
 
-    step = 2 * M_PI * note->pitch * d->inverse_sample_rate;
+    step = note->pitch * d->inverse_sample_rate;
 
     for (i = 0; i < size; i++) {
         accumulator = 0.0f;
