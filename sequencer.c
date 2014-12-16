@@ -122,12 +122,10 @@ void handle_program_change(struct dioxide *d, snd_seq_ev_ctrl_t control) {
             break;
         /* C20 */
         case 2:
-            d->metal = &lead;
-            printf("Instrument: Lead\n");
             break;
         /* C21 */
         case 3:
-            d->pitch_wheel_config = ++d->pitch_wheel_config % WHEEL_MAX;
+            d->pitch_wheel_config = (d->pitch_wheel_config + 1) % WHEEL_MAX;
             break;
         default:
             printf("Program change %d\n", control.value);
