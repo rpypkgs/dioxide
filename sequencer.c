@@ -1,6 +1,8 @@
 #include <math.h>
 
 #include "dioxide.h"
+#include "uranium.h"
+#include "titanium.h"
 
 long scale_pot_long(unsigned pot, long low, long high) {
     long l = pot * (high - low);

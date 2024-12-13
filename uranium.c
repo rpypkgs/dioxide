@@ -2,6 +2,7 @@
 #include <stdio.h>
 
 #include "dioxide.h"
+#include "uranium.h"
 #include "lfo.h"
 #include "nsinf.h"
 
@@ -32,7 +33,7 @@ void setup_uranium() {
         return;
     }
 
-    for (i = 0; i <= 1025; i++) {
+    for (i = 0; i < 1025; i++) {
         sawtooth_upper[i] = sawtooth_lower[i] = 0.0f;
         for (j = 1; j < 11; j++) {
             sawtooth_upper[i] += nsinf(i * j / 1024.0f) / j;

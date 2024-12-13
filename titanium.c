@@ -2,6 +2,7 @@
 #include <stdio.h>
 
 #include "dioxide.h"
+#include "titanium.h"
 #include "nsinf.h"
 
 /* These are technically twice the correct frequency. It makes the maths a bit

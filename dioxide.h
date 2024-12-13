@@ -1,7 +1,7 @@
 #ifndef DIOXIDE_H
 #define DIOXIDE_H
 
-#include <asoundlib.h>
+#include <alsa/asoundlib.h>
 
 #include "SDL.h"
 #include "SDL_audio.h"
@@ -89,7 +89,5 @@ struct dioxide {
 void setup_sequencer(struct dioxide *d);
 void poll_sequencer(struct dioxide *d);
 void solicit_connections(struct dioxide *d);
-
-struct element uranium, titanium;
 
 #endif

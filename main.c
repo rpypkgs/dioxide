@@ -6,6 +6,8 @@
 #include <sys/time.h>
 
 #include "dioxide.h"
+#include "uranium.h"
+#include "titanium.h"
 #include "timer.h"
 
 static int time_to_quit = 0;

@@ -1,4 +1,4 @@
-AC_INIT(dioxide, [0.1], [MostAwesomeDude@gmail.com])
+AC_INIT(dioxide, [0.1], [cds@corbinsimpson.com])
 
 AM_INIT_AUTOMAKE([-Wall -Werror foreign])
 
