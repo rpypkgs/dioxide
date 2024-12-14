@@ -20,21 +20,48 @@
     },
     "nixpkgs": {
       "locked": {
-        "lastModified": 1731386116,
-        "narHash": "sha256-lKA770aUmjPHdTaJWnP3yQ9OI1TigenUqVC3wweqZuI=",
-        "path": "/nix/store/8f039qdj69z78ls6rf9xli6rc638g36x-source",
-        "rev": "689fed12a013f56d4c4d3f612489634267d86529",
-        "type": "path"
+        "lastModified": 1734017764,
+        "narHash": "sha256-msOfmyJSjAHgIygI/JD0Ae3JsDv4rT54Nlfr5t6MQMQ=",
+        "owner": "NixOS",
+        "repo": "nixpkgs",
+        "rev": "64e9404f308e0f0a0d8cdd7c358f74e34802494b",
+        "type": "github"
       },
       "original": {
-        "id": "nixpkgs",
-        "type": "indirect"
+        "owner": "NixOS",
+        "ref": "nixos-24.05",
+        "repo": "nixpkgs",
+        "type": "github"
       }
     },
     "root": {
       "inputs": {
         "flake-utils": "flake-utils",
-        "nixpkgs": "nixpkgs"
+        "nixpkgs": "nixpkgs",
+        "rpypkgs": "rpypkgs"
+      }
+    },
+    "rpypkgs": {
+      "inputs": {
+        "flake-utils": [
+          "flake-utils"
+        ],
+        "nixpkgs": [
+          "nixpkgs"
+        ]
+      },
+      "locked": {
+        "lastModified": 1731791060,
+        "narHash": "sha256-mBAx4063kUzRztolK8yiiUiW0HX3bv817QWbyFiloyc=",
+        "owner": "rpypkgs",
+        "repo": "rpypkgs",
+        "rev": "4d2f06940a5b233c36c1ec8b211eac751a923735",
+        "type": "github"
+      },
+      "original": {
+        "owner": "rpypkgs",
+        "repo": "rpypkgs",
+        "type": "github"
       }
     },
     "systems": {
