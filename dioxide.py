@@ -2,6 +2,14 @@ import math
 import sys
 import time
 
+from rpython.rlib.rarithmetic import intmask
+from rpython.rlib.rerased import new_erasing_pair
+from rpython.rtyper.annlowlevel import llhelper
+from rpython.rtyper.lltypesystem import rffi
+from rpython.rtyper.lltypesystem.lltype import scoped_alloc
+
+from rsdl import RSDL
+
 def lerp(x, y, t): return (1.0 - t) * x + t * y
 
 pi2 = math.pi * 2
@@ -60,10 +68,30 @@ def scalePotLogFloat(pot, low, high):
     h = math.log(high)
     return math.exp((pot / 127.0) * (h - l) + l)
 
-WHEEL_MAX = 4
-TRADITIONAL, RUDESS, DIVEBOMB, MAX = range(WHEEL_MAX)
+TRADITIONAL, RUDESS, DIVEBOMB, WHEEL_MAX = range(4)
 
 class Config(object):
+    elementIndex = 0
+    volume = 1.0
+    attackTime = decayTime = releaseTime = 0.001
+    lpfResonance = 4.0
+    pitchWheel = 0
+    pitchWheelConfig = TRADITIONAL
+
+    def computeBend(self):
+        if self.config.pitchWheelConfig == TRADITIONAL:
+            return self.config.pitchWheel * (2.0 / 8192.0)
+        elif self.config.pitchWheel == RUDESS:
+            # Split the pitch wheel into an upper and lower range.
+            if self.pitchWheel >= 0:
+                return self.config.pitchWheel * (2.0 / 8192.0)
+            else: return self.config.pitchWheel * (12.0 / 8192.0)
+        elif self.config.pitchWheel == DIVEBOMB:
+            if self.pitchWheel >= 0:
+                return self.config.pitchWheel * (24.0 / 8192.0)
+            else: return self.config.pitchWheel * (36.0 / 8192.0)
+        assert False
+
     # Oxygen pots and dials all go from 0 to 127.
     def handleController(self, control):
         # C1
@@ -189,12 +217,10 @@ class Titanium(Element):
     name = "Titanium"
     adsrCls = ADSRTitanium
 
-    def generate(self, note, config, count):
+    def generate(self, note, config, buf):
         step = note.pitch * self.inverseSampleRate
 
-        # XXX
-        buffer = []
-        for _ in range(count):
+        for i in range(len(buf)):
             self.applyADSR(note, config)
 
             accumulator = 0.0
@@ -206,8 +232,7 @@ class Titanium(Element):
             while note.phase >= 1.0: note.phase -= 1.0
 
             # Divide by the number of drawbars.
-            buffer.append(accumulator / 9.0 * note.volume)
-        return buffer
+            buf[i] = accumulator / 9.0 * note.volume
 
 
 # Uranium: sawtooth lead
@@ -252,10 +277,8 @@ class Uranium(Element):
     name = "Uranium"
     adsrCls = ADSRUranium
 
-    def generate(self, note, config, count):
-        # XXX
-        buffer = []
-        for _ in range(count):
+    def generate(self, note, config, buf):
+        for i in range(len(buf)):
             self.applyADSR(note, config)
 
             growlbrato.rate = 80 if note.stage < SUSTAIN else 5
@@ -281,20 +304,109 @@ class Uranium(Element):
             elif pitch > 3520.0: result = upper
             else: result = lerp(lower, upper, (pitch - 220.0) / 3300.0)
 
-            buffer.append(result * note.volume)
-        return buffer
+            buf[i] = result * note.volume
+
+_DIOXIDE = [None]
+def getDioxide():
+    if _DIOXIDE[0] is None: _DIOXIDE[0] = Dioxide()
+    rv = _DIOXIDE[0]
+    if rv is None: rv = _DIOXIDE[0] = Dioxide()
+    return rv
+
+def writeSound(_, stream, count):
+    d = getDioxide()
+    # Update pitch only once per buffer.
+    d.cleanAndUpdateNotes()
+
+    if not d.notes:
+        RSDL.PauseAudio(1)
+        return
+
+    # Treat len and buf as counting shorts, not bytes.
+    # Avoids cognitive dissonance in later code.
+    count >>= 1
+    stream = rffi.cast(rffi.SHORTP, stream)
+
+    buf = [0.0] * count
+
+    metal = d.metal()
+    for note in d.notes: metal.generate(note, d.config, buf)
+
+    for i, sample in enumerate(buf):
+        acc = sample * d.config.volume * -32767
+        acc = max(-32768, min(32767, acc))
+        stream[i] = acc
+
+class Dioxide(object):
+    def __init__(self):
+        self.config = Config()
+        self.notes = []
+
+    def cleanAndUpdateNotes(self):
+        self.notes = [note for note in self.notes
+                      if note.volume == 0.0 and note.stage == RELEASE]
+        for note in self.notes:
+            midi = note.note + self.config.computeBend()
+            note.pitch = 440.0 * math.pow(2, (midi - 69.0) / 12.0)
+
+    def metal(self): return self.elements[self.config.elementIndex]
+
+    def setupSound(self):
+        with scoped_alloc(RSDL.AudioSpec) as wanted:
+            wanted.c_freq = rffi.r_int(44100)
+            wanted.c_format = rffi.r_ushort(RSDL.AUDIO_S16)
+            wanted.c_channels = rffi.r_uchar(1)
+            wanted.c_samples = rffi.r_ushort(512)
+            wanted.c_callback = llhelper(RSDL.AudioCallback, writeSound)
+
+            with scoped_alloc(RSDL.AudioSpec) as actual:
+                if RSDL.OpenAudio(wanted, actual):
+                    print "Couldn't setup sound:", RSDL.GetError()
+                    return False
+
+                freq = intmask(actual.c_freq)
+                samples = intmask(actual.c_samples)
+
+                print "Opened sound for playback: Rate %d, format %d, samples %d" % (
+                        freq, intmask(actual.c_format), samples)
+
+                self.config.inverseSampleRate = 1.0 / freq
+                self.config.lpfCutoff = freq
+
+                print "Initialized basic synth params; frame length is %d usec" % (
+                        1000 * 1000 * samples / freq)
+
+        self.elements = [Uranium(self.config.inverseSampleRate),
+                         Titanium(self.config.inverseSampleRate)]
+        return True
+
+def closeSound():
+    RSDL.PauseAudio(1)
+    RSDL.CloseAudio()
 
 
 def main(argv):
-    # XXX
-    inverseSampleRate = 1.0 / 44100.0
-    config = Config()
-    elements = [Uranium(inverseSampleRate), Titanium(inverseSampleRate)]
+    d = getDioxide()
+    if not d.setupSound(): return 1
+    # setupSequencer()
+
+    RSDL.PauseAudio(1)
+
+    try:
+        while True:
+            break
+            # pollSequencer()
+            # if connected: solicitConnections()
+    except KeyboardInterrupt: pass
+
+    closeSound()
+
+    # retval = snd_seq_close(d->seq);
+
     return 0
 
 def target(driver, *args):
     driver.exe_name = "dioxide"
     return main, None
 
-if __name__ == "__main__":
-    sys.exit(main(sys.argv))
+if __name__ == "__main__": sys.exit(main(sys.argv))

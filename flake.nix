@@ -6,6 +6,7 @@
     flake-utils.url = "github:numtide/flake-utils";
     rpypkgs = {
       url = "github:rpypkgs/rpypkgs";
+      # url = "/home/simpson/git/rpypkgs";
       inputs = {
         nixpkgs.follows = "nixpkgs";
         flake-utils.follows = "flake-utils";
@@ -28,6 +29,7 @@
         entrypoint = "dioxide.py";
         binName = "dioxide";
         optLevel = "2";
+        withLibs = libs: [ libs.rsdl ];
       } {
         pname = "dioxide";
         version = "1.0";
