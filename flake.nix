@@ -29,20 +29,19 @@
         entrypoint = "dioxide.py";
         binName = "dioxide";
         optLevel = "2";
-        withLibs = libs: [ libs.rsdl ];
       } {
         pname = "dioxide";
-        version = "1.0";
+        version = "1.1";
 
         src = ./.;
 
-        buildInputs = with pkgs; [ alsaLib SDL ];
+        buildInputs = with pkgs; [ jack2.dev ];
       };
     in {
       packages = {
-        default = dioxide0;
-        dioxide = dioxide0;
+        dioxide0 = dioxide0;
         dioxide1 = dioxide1;
+        default = dioxide1;
       };
       devShells.default = pkgs.mkShell {
         packages = with pkgs; [

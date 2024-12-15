@@ -3,13 +3,10 @@ import sys
 import time
 
 from rpython.rlib.rarithmetic import intmask
-from rpython.rlib.rerased import new_erasing_pair
 from rpython.rtyper.annlowlevel import llhelper
 from rpython.rtyper.lltypesystem import lltype, rffi
 
-from rsdl import RSDL
-
-import snd
+import jack
 
 def lerp(x, y, t): return (1.0 - t) * x + t * y
 
@@ -308,38 +305,6 @@ class Uranium(Element):
             buf[i] = result * note.volume
 
 
-class Sequencer(object):
-    def setup(self):
-        with lltype.scoped_alloc(rffi.VOIDP) as ptr:
-            rv = snd.seq_open(ptr.raw, "default", snd.SEQ_OPEN_INPUT,
-                              snd.SEQ_NONBLOCK)
-            if rv:
-                print "Couldn't open sequencer:", snd.strerror(rv)
-                return False
-            self.seq = rffi.cast(snd.seq_tp, ptr[0])
-
-        rv = snd.seq_set_client_name(self.seq, "Dioxide")
-        if rv:
-            print "Couldn't set client name:", snd.strerror(rv)
-            return False
-
-        rv = snd.seq_create_simple_port(self.seq, "Dioxide",
-                                        snd.SEQ_PORT_CAP_WRITE |
-                                        snd.SEQ_PORT_CAP_SUBS_WRITE,
-                                        snd.SEQ_PORT_TYPE_MIDI_GENERIC)
-        if rv < 0:
-            print "Couldn't open port:", snd.strerror(rv)
-            return False
-
-        self.port = rv
-        print "Created sequencer port %d" % self.port
-        return True
-
-    def close(self):
-        if not self.seq: return 1
-        snd.seq_close(self.seq)
-        return 0
-
 _DIOXIDE = [None]
 def getDioxide():
     if _DIOXIDE[0] is None: _DIOXIDE[0] = Dioxide()
@@ -352,9 +317,7 @@ def writeSound(_, stream, count):
     # Update pitch only once per buffer.
     d.cleanAndUpdateNotes()
 
-    if not d.notes:
-        RSDL.PauseAudio(1)
-        return
+    if not d.notes: return
 
     # Treat len and buf as counting shorts, not bytes.
     # Avoids cognitive dissonance in later code.
@@ -386,46 +349,36 @@ class Dioxide(object):
     def metal(self): return self.elements[self.config.elementIndex]
 
     def setupSound(self):
-        with lltype.scoped_alloc(RSDL.AudioSpec) as wanted:
-            wanted.c_freq = rffi.r_int(44100)
-            wanted.c_format = rffi.r_ushort(RSDL.AUDIO_S16)
-            wanted.c_channels = rffi.r_uchar(1)
-            wanted.c_samples = rffi.r_ushort(512)
-            wanted.c_callback = llhelper(RSDL.AudioCallback, writeSound)
+        self.client = jack.client_open("dioxide", 0, None)
+        if not self.client:
+            print "Couldn't connect to JACK!"
+            return False
 
-            with lltype.scoped_alloc(RSDL.AudioSpec) as actual:
-                if RSDL.OpenAudio(wanted, actual):
-                    print "Couldn't setup sound:", RSDL.GetError()
-                    return False
+        self.name = rffi.charp2str(jack.get_client_name(self.client))
+        print "Registered with JACK as '%s'" % self.name
 
-                freq = intmask(actual.c_freq)
-                samples = intmask(actual.c_samples)
+        freq = jack.get_sample_rate(self.client)
+        samples = jack.get_buffer_size(self.client)
 
-                print "Opened sound for playback: Rate %d, format %d, samples %d" % (
-                        freq, intmask(actual.c_format), samples)
+        print "JACK server parameters: Rate %d, samples %d" % (
+                freq, samples)
 
-                self.config.inverseSampleRate = 1.0 / freq
-                self.config.lpfCutoff = freq
+        self.config.inverseSampleRate = 1.0 / freq
+        self.config.lpfCutoff = freq
 
-                print "Initialized basic synth params; frame length is %d usec" % (
-                        1000 * 1000 * samples / freq)
+        print "Initialized basic synth params; frame length is %d usec" % (
+                1000 * 1000 * samples / freq)
 
         self.elements = [Uranium(self.config.inverseSampleRate),
                          Titanium(self.config.inverseSampleRate)]
         return True
 
-def closeSound():
-    RSDL.PauseAudio(1)
-    RSDL.CloseAudio()
+    def teardown(self): return jack.client_close(self.client)
 
 
 def main(argv):
     d = getDioxide()
     if not d.setupSound(): return 1
-    seq = Sequencer()
-    if not seq.setup(): return 1
-
-    RSDL.PauseAudio(1)
 
     try:
         while True:
@@ -434,9 +387,7 @@ def main(argv):
             # if connected: solicitConnections()
     except KeyboardInterrupt: pass
 
-    closeSound()
-
-    return seq.close()
+    return d.teardown()
 
 def target(driver, *args):
     driver.exe_name = "dioxide"
