@@ -309,17 +309,14 @@ class Uranium(Element):
 
 
 class Sequencer(object):
-    seq = None
-    port = -1
-
     def setup(self):
-        with lltype.scoped_alloc(snd.seq_tp) as ptr:
-            rv = snd.seq_open(ptr, "default", snd.SEQ_OPEN_INPUT,
+        with lltype.scoped_alloc(rffi.VOIDP) as ptr:
+            rv = snd.seq_open(ptr.raw, "default", snd.SEQ_OPEN_INPUT,
                               snd.SEQ_NONBLOCK)
             if rv:
                 print "Couldn't open sequencer:", snd.strerror(rv)
                 return False
-            self.seq = ptr[0]
+            self.seq = rffi.cast(snd.seq_tp, ptr[0])
 
         rv = snd.seq_set_client_name(self.seq, "Dioxide")
         if rv:
@@ -339,7 +336,7 @@ class Sequencer(object):
         return True
 
     def close(self):
-        if self.seq is None: return 1
+        if not self.seq: return 1
         snd.seq_close(self.seq)
         return 0
 
