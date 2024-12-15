@@ -5,10 +5,11 @@ import time
 from rpython.rlib.rarithmetic import intmask
 from rpython.rlib.rerased import new_erasing_pair
 from rpython.rtyper.annlowlevel import llhelper
-from rpython.rtyper.lltypesystem import rffi
-from rpython.rtyper.lltypesystem.lltype import scoped_alloc
+from rpython.rtyper.lltypesystem import lltype, rffi
 
 from rsdl import RSDL
+
+import snd
 
 def lerp(x, y, t): return (1.0 - t) * x + t * y
 
@@ -306,6 +307,42 @@ class Uranium(Element):
 
             buf[i] = result * note.volume
 
+
+class Sequencer(object):
+    seq = None
+    port = -1
+
+    def setup(self):
+        with lltype.scoped_alloc(snd.seq_tp) as ptr:
+            rv = snd.seq_open(ptr, "default", snd.SEQ_OPEN_INPUT,
+                              snd.SEQ_NONBLOCK)
+            if rv:
+                print "Couldn't open sequencer:", snd.strerror(rv)
+                return False
+            self.seq = ptr[0]
+
+        rv = snd.seq_set_client_name(self.seq, "Dioxide")
+        if rv:
+            print "Couldn't set client name:", snd.strerror(rv)
+            return False
+
+        rv = snd.seq_create_simple_port(self.seq, "Dioxide",
+                                        snd.SEQ_PORT_CAP_WRITE |
+                                        snd.SEQ_PORT_CAP_SUBS_WRITE,
+                                        snd.SEQ_PORT_TYPE_MIDI_GENERIC)
+        if rv < 0:
+            print "Couldn't open port:", snd.strerror(rv)
+            return False
+
+        self.port = rv
+        print "Created sequencer port %d" % self.port
+        return True
+
+    def close(self):
+        if self.seq is None: return 1
+        snd.seq_close(self.seq)
+        return 0
+
 _DIOXIDE = [None]
 def getDioxide():
     if _DIOXIDE[0] is None: _DIOXIDE[0] = Dioxide()
@@ -352,14 +389,14 @@ class Dioxide(object):
     def metal(self): return self.elements[self.config.elementIndex]
 
     def setupSound(self):
-        with scoped_alloc(RSDL.AudioSpec) as wanted:
+        with lltype.scoped_alloc(RSDL.AudioSpec) as wanted:
             wanted.c_freq = rffi.r_int(44100)
             wanted.c_format = rffi.r_ushort(RSDL.AUDIO_S16)
             wanted.c_channels = rffi.r_uchar(1)
             wanted.c_samples = rffi.r_ushort(512)
             wanted.c_callback = llhelper(RSDL.AudioCallback, writeSound)
 
-            with scoped_alloc(RSDL.AudioSpec) as actual:
+            with lltype.scoped_alloc(RSDL.AudioSpec) as actual:
                 if RSDL.OpenAudio(wanted, actual):
                     print "Couldn't setup sound:", RSDL.GetError()
                     return False
@@ -388,7 +425,8 @@ def closeSound():
 def main(argv):
     d = getDioxide()
     if not d.setupSound(): return 1
-    # setupSequencer()
+    seq = Sequencer()
+    if not seq.setup(): return 1
 
     RSDL.PauseAudio(1)
 
@@ -401,9 +439,7 @@ def main(argv):
 
     closeSound()
 
-    # retval = snd_seq_close(d->seq);
-
-    return 0
+    return seq.close()
 
 def target(driver, *args):
     driver.exe_name = "dioxide"

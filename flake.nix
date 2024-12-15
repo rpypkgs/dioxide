@@ -44,5 +44,10 @@
         dioxide = dioxide0;
         dioxide1 = dioxide1;
       };
+      devShells.default = pkgs.mkShell {
+        packages = with pkgs; [
+          gdb linuxPackages.perf
+        ];
+      };
     });
 }
