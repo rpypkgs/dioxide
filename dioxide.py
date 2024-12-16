@@ -87,12 +87,12 @@ class Config(object):
     def computeBend(self):
         if self.pitchWheelConfig == TRADITIONAL:
             return self.pitchWheel * (2.0 / 8192.0)
-        elif self.pitchWheel == RUDESS:
+        elif self.pitchWheelConfig == RUDESS:
             # Split the pitch wheel into an upper and lower range.
             if self.pitchWheel >= 0:
                 return self.pitchWheel * (2.0 / 8192.0)
             else: return self.pitchWheel * (12.0 / 8192.0)
-        elif self.pitchWheel == DIVEBOMB:
+        elif self.pitchWheelConfig == DIVEBOMB:
             if self.pitchWheel >= 0:
                 return self.pitchWheel * (24.0 / 8192.0)
             else: return self.pitchWheel * (36.0 / 8192.0)
@@ -340,7 +340,7 @@ def go(nframes, _):
                 elif ty == 14:
                     low = intmask(event.c_buffer[1])
                     high = intmask(event.c_buffer[2])
-                    d.config.pitchWheel = (high << 7) | low
+                    d.config.pitchWheel = ((high << 7) | low) - 0x1fff
                 else: print "Unknown MIDI event type %d" % ty
 
     # Update pitch only once per processing callback, after handling MIDI
