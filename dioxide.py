@@ -66,7 +66,7 @@ def scalePotLogFloat(pot, low, high):
     h = math.log(high)
     return math.exp((pot / 127.0) * (h - l) + l)
 
-TRADITIONAL, RUDESS, DIVEBOMB, WHEEL_MAX = range(4)
+TRADITIONAL, RUDESS, DIVEBOMB = range(3)
 
 class Config(object):
     elementIndex = 0
@@ -98,64 +98,64 @@ class Config(object):
         assert False
 
     # Oxygen pots and dials all go from 0 to 127.
-    def handleController(self, control):
+    def handleController(self, control, value):
         # C1
-        if control.param == 74:
-            self.drawbars[0] = scalePotLong(control.value, 0, 8)
+        if control == 74:
+            self.drawbars[0] = scalePotLong(value, 0, 8)
         # C2
-        elif control.param == 71:
-            self.drawbars[1] = scalePotLong(control.value, 0, 8)
+        elif control == 71:
+            self.drawbars[1] = scalePotLong(value, 0, 8)
         # C3
-        elif control.param == 91:
-            self.drawbars[2] = scalePotLong(control.value, 0, 8)
+        elif control == 91:
+            self.drawbars[2] = scalePotLong(value, 0, 8)
         # C4
-        elif control.param == 93:
-            self.drawbars[3] = scalePotLong(control.value, 0, 8)
+        elif control == 93:
+            self.drawbars[3] = scalePotLong(value, 0, 8)
         # C5
-        elif control.param == 73:
-            self.drawbars[4] = scalePotLong(control.value, 0, 8)
+        elif control == 73:
+            self.drawbars[4] = scalePotLong(value, 0, 8)
         # C6
-        elif control.param == 72:
-            self.drawbars[5] = scalePotLong(control.value, 0, 8)
+        elif control == 72:
+            self.drawbars[5] = scalePotLong(value, 0, 8)
         # C7
-        elif control.param == 5:
-            self.drawbars[6] = scalePotLong(control.value, 0, 8)
+        elif control == 5:
+            self.drawbars[6] = scalePotLong(value, 0, 8)
         # C8
-        elif control.param == 84:
-            self.drawbars[7] = scalePotLong(control.value, 0, 8)
+        elif control == 84:
+            self.drawbars[7] = scalePotLong(value, 0, 8)
         # C9
-        elif control.param == 7:
-            self.drawbars[8] = scalePotLong(control.value, 0, 8)
+        elif control == 7:
+            self.drawbars[8] = scalePotLong(value, 0, 8)
         # C10
-        elif control.param == 75:
-            self.volume = scalePotFloat(control.value, 0.0, 1.0)
+        elif control == 75:
+            self.volume = scalePotFloat(value, 0.0, 1.0)
         # C11
-        elif control.param == 76:
-            self.attackTime = scalePotFloat(control.value, 0.001, 1.0)
+        elif control == 76:
+            self.attackTime = scalePotFloat(value, 0.001, 1.0)
         # C12
-        elif control.param == 92:
-            self.decayTime = scalePotFloat(control.value, 0.001, 1.0)
+        elif control == 92:
+            self.decayTime = scalePotFloat(value, 0.001, 1.0)
         # C13
-        elif control.param == 95:
-            self.releaseTime = scalePotFloat(control.value, 0.001, 1.0)
+        elif control == 95:
+            self.releaseTime = scalePotFloat(value, 0.001, 1.0)
         # C14
-        elif control.param == 10:
-            self.chorusDelay = scalePotLogFloat(control.value, 2.5, 40)
-            self.lpfResonance = scalePotFloat(control.value, 0.0, 4.0)
+        elif control == 10:
+            self.chorusDelay = scalePotLogFloat(value, 2.5, 40)
+            self.lpfResonance = scalePotFloat(value, 0.0, 4.0)
         # C15
-        elif control.param == 77:
-            self.phaserRate = scalePotFloat(control.value, 0.0, 1.0)
-            self.phaserDepth = scalePotFloat(control.value, 0.0, 1.0)
+        elif control == 77:
+            self.phaserRate = scalePotFloat(value, 0.0, 1.0)
+            self.phaserDepth = scalePotFloat(value, 0.0, 1.0)
         # C16
-        elif control.param == 78:
-            self.phaserSpread = scalePotFloat(control.value, 0.0, 1.5708)
+        elif control == 78:
+            self.phaserSpread = scalePotFloat(value, 0.0, 1.5708)
         # C16
-        elif control.param == 79:
-            self.phaserFeedback = scalePotFloat(control.value, 0.0, 0.999)
+        elif control == 79:
+            self.phaserFeedback = scalePotFloat(value, 0.0, 0.999)
         # C34
-        elif control.param == 1:
-            self.modWheel = scalePotFloat(control.value, 0.001, 1.0)
-        else: print "Controller %d, value %d" % (control.param, control.value)
+        elif control == 1:
+            self.modWheel = scalePotFloat(value, 0.001, 1.0)
+        else: print "Controller %d, value %d" % (control, value)
 
     def handleProgramChange(self, value):
         # C18-C19
@@ -164,7 +164,7 @@ class Config(object):
         elif value == 2: pass
         # C21
         elif value == 3:
-            self.pitchWheelConfig = (self.pitchWheelConfig + 1) % WHEEL_MAX
+            self.pitchWheelConfig = (self.pitchWheelConfig + 1) % 3
         else: print "Program Change %d" % value
 
 
@@ -301,8 +301,6 @@ class Note(object):
     pitch = phase = volume = 0.0
     stage = ATTACK
 
-    def __init__(self, note): self.note = note
-
 
 _DIOXIDE = [None]
 def getDioxide(): return _DIOXIDE[0]
@@ -324,13 +322,14 @@ def go(nframes, _):
                 ty = intmask(event.c_buffer[0]) >> 4
                 if ty == 8:
                     midiNote = intmask(event.c_buffer[1])
-                    for note in d.notes:
-                        if note.note == midiNote: note.phase = RELEASE
+                    if midiNote in d.notes: d.notes[midiNote].stage = RELEASE
                 elif ty == 9:
                     midiNote = intmask(event.c_buffer[1])
-                    for note in d.notes:
-                        if note.note == midiNote: break
-                    else: d.notes.append(Note(midiNote))
+                    if midiNote in d.notes: d.notes[midiNote].stage = ATTACK
+                    else: d.notes[midiNote] = Note()
+                elif ty == 11:
+                    d.config.handleController(intmask(event.c_buffer[1]),
+                                              intmask(event.c_buffer[2]))
                 elif ty == 12:
                     d.config.handleProgramChange(intmask(event.c_buffer[1]))
                 elif ty == 14:
@@ -340,12 +339,12 @@ def go(nframes, _):
     # Update pitch only once per processing callback, after handling MIDI
     # events, before emitting samples.
     d.cleanAndUpdateNotes()
-    if not d.notes: return 0
+    if not len(d.notes): return 0
 
     waveBuf = rffi.cast(rffi.FLOATP,
                         jack.port_get_buffer(d.wavePort, nframes))
     metal = d.metal()
-    for note in d.notes:
+    for note in d.notes.itervalues():
         metal.applyADSR(note)
         metal.generate(note, waveBuf, intmask(nframes))
     return 0
@@ -353,15 +352,18 @@ def go(nframes, _):
 class Dioxide(object):
     def __init__(self):
         self.config = Config()
-        self.notes = []
+        self.notes = {}
         self.elements = [Uranium(self.config), Titanium(self.config)]
 
     def cleanAndUpdateNotes(self):
-        self.notes = [note for note in self.notes
-                      if note.volume != 0.0 or note.stage != RELEASE]
-        for note in self.notes:
-            midi = note.note + self.config.computeBend()
-            note.pitch = 440.0 * math.pow(2, (midi - 69.0) / 12.0)
+        done = []
+        for midiNote, note in self.notes.items():
+            if note.volume == 0.0 and note.stage == RELEASE:
+                done.append(midiNote)
+            else:
+                midi = midiNote + self.config.computeBend()
+                note.pitch = 440.0 * math.pow(2, (midi - 69.0) / 12.0)
+        for midiNote in done: del self.notes[midiNote]
 
     def metal(self): return self.elements[self.config.elementIndex]
 
