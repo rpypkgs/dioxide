@@ -3,6 +3,7 @@ import sys
 import time
 
 from rpython.rlib.rarithmetic import intmask, r_singlefloat
+from rpython.rlib import rgil
 from rpython.rtyper.annlowlevel import llhelper
 from rpython.rtyper.lltypesystem import lltype, rffi
 
@@ -215,6 +216,8 @@ class Titanium(Element):
         step = note.pitch * self.config.inverseSampleRate
 
         for i in range(nframes):
+            self.applyADSR(note)
+
             accumulator = 0.0
             for j, drawbar in enumerate(self.config.drawbars):
                 if drawbar:
@@ -224,7 +227,7 @@ class Titanium(Element):
             while note.phase >= 1.0: note.phase -= 1.0
 
             # Divide by the number of drawbars.
-            buf[i] = r_singlefloat(accumulator / len(self.config.drawbars) * note.volume)
+            buf[i] += accumulator / len(self.config.drawbars) * note.volume
 
 
 # Uranium: sawtooth lead
@@ -271,6 +274,8 @@ class Uranium(Element):
 
     def generate(self, note, buf, nframes):
         for i in range(nframes):
+            self.applyADSR(note)
+
             growlbrato.rate = 80 if note.stage < SUSTAIN else 5
 
             # Step forward.
@@ -294,7 +299,7 @@ class Uranium(Element):
             elif pitch > 3520.0: result = upper
             else: result = lerp(lower, upper, (pitch - 220.0) / 3300.0)
 
-            buf[i] = r_singlefloat(result * note.volume)
+            buf[i] += result * note.volume
 
 
 class Note(object):
@@ -333,7 +338,9 @@ def go(nframes, _):
                 elif ty == 12:
                     d.config.handleProgramChange(intmask(event.c_buffer[1]))
                 elif ty == 14:
-                    d.config.pitchWheel = intmask(event.c_buffer[2])
+                    low = intmask(event.c_buffer[1])
+                    high = intmask(event.c_buffer[2])
+                    d.config.pitchWheel = (high << 7) | low
                 else: print "Unknown MIDI event type %d" % ty
 
     # Update pitch only once per processing callback, after handling MIDI
@@ -344,9 +351,10 @@ def go(nframes, _):
     waveBuf = rffi.cast(rffi.FLOATP,
                         jack.port_get_buffer(d.wavePort, nframes))
     metal = d.metal()
+    doubleBuf = [0.0] * nframes
     for note in d.notes.itervalues():
-        metal.applyADSR(note)
-        metal.generate(note, waveBuf, intmask(nframes))
+        metal.generate(note, doubleBuf, intmask(nframes))
+    for i in range(intmask(nframes)): waveBuf[i] = r_singlefloat(doubleBuf[i])
     return 0
 
 class Dioxide(object):
@@ -400,6 +408,10 @@ _DIOXIDE[0] = Dioxide()
 
 
 def main(argv):
+    # Explicitly enable the GIL. RPython cannot otherwise detect that we will
+    # need it until it is too late and we are already crashing.
+    rgil.allocate()
+
     d = getDioxide()
     print "Setting up JACK client..."
     if not d.setup(): return 1
