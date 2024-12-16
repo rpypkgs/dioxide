@@ -1,1 +1,0 @@
-float nsinf(float z);
