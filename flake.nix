@@ -64,7 +64,7 @@
       };
       devShells.default = pkgs.mkShell {
         packages = with pkgs; [
-          gdb linuxPackages.perf
+          gdb linuxPackages.perf ltrace
         ];
       };
     });

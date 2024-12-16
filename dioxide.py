@@ -79,6 +79,7 @@ class Config(object):
     def __init__(self): self.drawbars = [0] * 9
 
     def updateSampleRate(self, srate):
+        print "Sample rate: %d" % srate
         self.inverseSampleRate = 1.0 / srate
         self.lpfCutoff = srate
 
@@ -304,49 +305,42 @@ class Note(object):
 
 
 _DIOXIDE = [None]
-def getDioxide():
-    if _DIOXIDE[0] is None: _DIOXIDE[0] = Dioxide()
-    rv = _DIOXIDE[0]
-    if rv is None: rv = _DIOXIDE[0] = Dioxide()
-    return rv
+def getDioxide(): return _DIOXIDE[0]
 
 def sampleRateCallback(srate, _):
     srate = intmask(srate)
-    print "JACK server sample rate callback %d" % srate
     getDioxide().config.updateSampleRate(srate)
     return 0
 
 def go(nframes, _):
-    print "JACK server process callback %d" % intmask(nframes)
     d = getDioxide()
 
     midiBuf = jack.port_get_buffer(d.midiPort, nframes)
-    eventCount = jack.midi_get_event_count(midiBuf)
+    eventCount = intmask(jack.midi_get_event_count(midiBuf))
     if eventCount:
-        print "Handling %d events" % eventCount
         with lltype.scoped_alloc(jack.midi_event_t) as event:
             for i in range(eventCount):
                 jack.midi_event_get(event, midiBuf, i)
                 ty = intmask(event.c_buffer[0]) >> 4
                 if ty == 8:
-                    # note off
                     midiNote = intmask(event.c_buffer[1])
                     for note in d.notes:
                         if note.note == midiNote: note.phase = RELEASE
                 elif ty == 9:
-                    # note on
                     midiNote = intmask(event.c_buffer[1])
                     for note in d.notes:
                         if note.note == midiNote: break
                     else: d.notes.append(Note(midiNote))
+                elif ty == 12:
+                    d.config.handleProgramChange(intmask(event.c_buffer[1]))
+                elif ty == 14:
+                    d.config.pitchWheel = intmask(event.c_buffer[2])
                 else: print "Unknown MIDI event type %d" % ty
 
     # Update pitch only once per processing callback, after handling MIDI
     # events, before emitting samples.
     d.cleanAndUpdateNotes()
-    # If there are no notes, return before calling port_get_buffer(), which
-    # signals to JACK that we have samples to write.
-    # if not d.notes: return 0
+    if not d.notes: return 0
 
     waveBuf = rffi.cast(rffi.FLOATP,
                         jack.port_get_buffer(d.wavePort, nframes))
@@ -364,7 +358,7 @@ class Dioxide(object):
 
     def cleanAndUpdateNotes(self):
         self.notes = [note for note in self.notes
-                      if note.volume == 0.0 and note.stage == RELEASE]
+                      if note.volume != 0.0 or note.stage != RELEASE]
         for note in self.notes:
             midi = note.note + self.config.computeBend()
             note.pitch = 440.0 * math.pow(2, (midi - 69.0) / 12.0)
@@ -400,6 +394,7 @@ class Dioxide(object):
         while True: time.sleep(5)
 
     def teardown(self): return jack.client_close(self.client)
+_DIOXIDE[0] = Dioxide()
 
 
 def main(argv):
