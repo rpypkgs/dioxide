@@ -348,7 +348,14 @@ class Dioxide(object):
 
     def metal(self): return self.elements[self.config.elementIndex]
 
-    def setupSound(self):
+    def updateSampleRate(self, srate):
+        print "JACK server sample rate: %d" % srate
+        self.config.inverseSampleRate = 1.0 / srate
+        self.config.lpfCutoff = srate
+        self.elements = [Uranium(self.config.inverseSampleRate),
+                         Titanium(self.config.inverseSampleRate)]
+
+    def setup(self):
         self.client = jack.client_open("dioxide", 0, None)
         if not self.client:
             print "Couldn't connect to JACK!"
@@ -357,34 +364,31 @@ class Dioxide(object):
         self.name = rffi.charp2str(jack.get_client_name(self.client))
         print "Registered with JACK as '%s'" % self.name
 
-        freq = jack.get_sample_rate(self.client)
-        samples = jack.get_buffer_size(self.client)
+        self.updateSampleRate(jack.get_sample_rate(self.client))
+        # XXX wire up sample-rate callback
 
-        print "JACK server parameters: Rate %d, samples %d" % (
-                freq, samples)
-
-        self.config.inverseSampleRate = 1.0 / freq
-        self.config.lpfCutoff = freq
-
-        print "Initialized basic synth params; frame length is %d usec" % (
-                1000 * 1000 * samples / freq)
-
-        self.elements = [Uranium(self.config.inverseSampleRate),
-                         Titanium(self.config.inverseSampleRate)]
+        self.midiPort = jack.port_register(self.client, "MIDI in",
+                                           jack.DEFAULT_MIDI_TYPE,
+                                           jack.PortIsInput, 0)
+        self.wavePort = jack.port_register(self.client, "wave out",
+                                           jack.DEFAULT_AUDIO_TYPE,
+                                           jack.PortIsOutput, 0)
         return True
+
+    def start(self):
+        if jack.activate(self.client):
+            print "Couldn't activate JACK client!"
+            return
+        while True: time.sleep(5)
 
     def teardown(self): return jack.client_close(self.client)
 
 
 def main(argv):
     d = getDioxide()
-    if not d.setupSound(): return 1
+    if not d.setup(): return 1
 
-    try:
-        while True:
-            break
-            # pollSequencer()
-            # if connected: solicitConnections()
+    try: d.start()
     except KeyboardInterrupt: pass
 
     return d.teardown()
