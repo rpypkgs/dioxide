@@ -212,22 +212,17 @@ class Titanium(Element):
             note.volume -= self.peak * self.config.inverseSampleRate / self.config.releaseTime
         else: note.volume = 0.0
 
-    def generate(self, note, buf, nframes):
+    def generate(self, note):
         step = note.pitch * self.config.inverseSampleRate
+        note.addPhase(step)
 
-        for i in range(nframes):
-            self.applyADSR(note)
+        accumulator = 0.0
+        for j, drawbar in enumerate(self.config.drawbars):
+            if drawbar:
+                accumulator += pots[drawbar] * nsin(note.phase * drawbarPitches[j])
 
-            accumulator = 0.0
-            for j, drawbar in enumerate(self.config.drawbars):
-                if drawbar:
-                    accumulator += pots[drawbar] * nsin(note.phase * drawbarPitches[j])
-
-            note.phase += step
-            while note.phase >= 1.0: note.phase -= 1.0
-
-            # Divide by the number of drawbars.
-            buf[i] += accumulator / len(self.config.drawbars) * note.volume
+        # Divide by the number of drawbars.
+        return accumulator / len(self.config.drawbars) * note.volume
 
 
 # Uranium: sawtooth lead
@@ -272,39 +267,37 @@ class Uranium(Element):
             note.volume -= self.sustained * self.config.inverseSampleRate / self.config.releaseTime
         else: note.volume = 0.0
 
-    def generate(self, note, buf, nframes):
-        for i in range(nframes):
-            self.applyADSR(note)
+    def generate(self, note):
+        growlbrato.rate = 80 if note.stage < SUSTAIN else 5
 
-            growlbrato.rate = 80 if note.stage < SUSTAIN else 5
+        # Step forward.
+        pitch = note.pitch * growlbrato.step(self.config.inverseSampleRate, 1)
+        step = pitch * self.config.inverseSampleRate
+        note.addPhase(step)
 
-            # Step forward.
-            pitch = note.pitch * growlbrato.step(self.config.inverseSampleRate, 1)
-            step = pitch * self.config.inverseSampleRate
+        # Do our sampling from the wavetable.
+        phase = note.phase * 1024.0
+        t, index = math.modf(phase)
+        index = int(index)
+        upper = lerp(sawtoothUpper[index], sawtoothUpper[index + 1], t)
+        lower = lerp(sawtoothLower[index], sawtoothLower[index + 1], t)
 
-            # Update phase.
-            phase = note.phase + step
-            while phase >= 1.0: phase -= 1.0
-            note.phase = phase
+        # And interpolate the samples.
+        if pitch < 220.0: result = lower
+        elif pitch > 3520.0: result = upper
+        else: result = lerp(lower, upper, (pitch - 220.0) / 3300.0)
 
-            # Do our sampling from the wavetable.
-            phase *= 1024.0
-            t, index = math.modf(phase)
-            index = int(index)
-            upper = lerp(sawtoothUpper[index], sawtoothUpper[index + 1], t)
-            lower = lerp(sawtoothLower[index], sawtoothLower[index + 1], t)
-
-            # And interpolate the samples.
-            if pitch < 220.0: result = lower
-            elif pitch > 3520.0: result = upper
-            else: result = lerp(lower, upper, (pitch - 220.0) / 3300.0)
-
-            buf[i] += result * note.volume
+        return result * note.volume
 
 
 class Note(object):
     pitch = phase = volume = 0.0
     stage = ATTACK
+
+    def addPhase(self, step):
+        phase = self.phase + step
+        if phase >= 1.0: phase -= 1.0
+        self.phase = phase
 
 
 _DIOXIDE = [None]
@@ -317,44 +310,55 @@ def sampleRateCallback(srate, _):
 
 def go(nframes, _):
     d = getDioxide()
+    metal = d.metal()
 
     midiBuf = jack.port_get_buffer(d.midiPort, nframes)
     eventCount = intmask(jack.midi_get_event_count(midiBuf))
-    if eventCount:
-        with lltype.scoped_alloc(jack.midi_event_t) as event:
-            for i in range(eventCount):
-                jack.midi_event_get(event, midiBuf, i)
-                ty = intmask(event.c_buffer[0]) >> 4
-                if ty == 8:
-                    midiNote = intmask(event.c_buffer[1])
-                    if midiNote in d.notes: d.notes[midiNote].stage = RELEASE
-                elif ty == 9:
-                    midiNote = intmask(event.c_buffer[1])
-                    if midiNote in d.notes: d.notes[midiNote].stage = ATTACK
-                    else: d.notes[midiNote] = Note()
-                elif ty == 11:
-                    d.config.handleController(intmask(event.c_buffer[1]),
-                                              intmask(event.c_buffer[2]))
-                elif ty == 12:
-                    d.config.handleProgramChange(intmask(event.c_buffer[1]))
-                elif ty == 14:
-                    low = intmask(event.c_buffer[1])
-                    high = intmask(event.c_buffer[2])
-                    d.config.pitchWheel = ((high << 7) | low) - 0x1fff
-                else: print "Unknown MIDI event type %d" % ty
-
-    # Update pitch only once per processing callback, after handling MIDI
-    # events, before emitting samples.
-    d.cleanAndUpdateNotes()
-    if not len(d.notes): return 0
+    moreEvents = bool(eventCount)
+    eventIndex = 0
+    nextEventFrame = 0
 
     waveBuf = rffi.cast(rffi.FLOATP,
                         jack.port_get_buffer(d.wavePort, nframes))
-    metal = d.metal()
-    doubleBuf = [0.0] * nframes
-    for note in d.notes.itervalues():
-        metal.generate(note, doubleBuf, intmask(nframes))
-    for i in range(intmask(nframes)): waveBuf[i] = r_singlefloat(doubleBuf[i])
+    with lltype.scoped_alloc(jack.midi_event_t) as event:
+        for i in range(intmask(nframes)):
+            if nextEventFrame <= i and moreEvents:
+                jack.midi_event_get(event, midiBuf, eventIndex)
+                while intmask(event.c_time) <= i:
+                    ty = intmask(event.c_buffer[0]) >> 4
+                    if ty == 8:
+                        midiNote = intmask(event.c_buffer[1])
+                        if midiNote in d.notes: d.notes[midiNote].stage = RELEASE
+                    elif ty == 9:
+                        midiNote = intmask(event.c_buffer[1])
+                        if midiNote in d.notes: d.notes[midiNote].stage = ATTACK
+                        else: d.notes[midiNote] = Note()
+                    elif ty == 11:
+                        d.config.handleController(intmask(event.c_buffer[1]),
+                                                  intmask(event.c_buffer[2]))
+                    elif ty == 12:
+                        d.config.handleProgramChange(intmask(event.c_buffer[1]))
+                    elif ty == 14:
+                        low = intmask(event.c_buffer[1])
+                        high = intmask(event.c_buffer[2])
+                        d.config.pitchWheel = ((high << 7) | low) - 0x1fff
+                    else: print "Unknown MIDI event type %d" % ty
+
+                    eventIndex += 1
+                    if eventCount <= eventIndex:
+                        moreEvents = False
+                        break
+                    jack.midi_event_get(event, midiBuf, eventIndex)
+                nextEventFrame = intmask(event.c_time)
+
+            acc = 0.0
+            for note in d.notes.itervalues():
+                metal.applyADSR(note)
+                acc += metal.generate(note)
+            waveBuf[i] = r_singlefloat(acc)
+
+    # Recompute pitches and discard released notes.
+    d.cleanAndUpdateNotes()
     return 0
 
 class Dioxide(object):
