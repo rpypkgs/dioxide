@@ -28,12 +28,19 @@ cb("Shutdown", [rffi.VOIDP], lltype.Void)
 class CConfig:
     _compilation_info_ = eci
 
+    midi_event_t = rffi_platform.Struct("jack_midi_event_t",
+                                        [("time", rffi.UINT),
+                                         ("size", rffi.SIZE_T),
+                                         ("buffer", rffi.UCHARP)])
+
 for c in Constants:
     setattr(CConfig, c, rffi_platform.ConstantInteger("Jack" + c))
 for c in CONSTANTS:
     setattr(CConfig, c, rffi_platform.DefinedConstantString("JACK_" + c))
 
 globals().update(rffi_platform.configure(CConfig))
+
+midi_event_tp = lltype.Ptr(midi_event_t)
 
 def ext(n, *args):
     globals()[n] = rffi.llexternal("jack_" + n, *args, compilation_info=eci)
@@ -53,3 +60,6 @@ ext("on_shutdown", [ShutdownCallback, rffi.VOIDP], lltype.Void)
 ext("port_register", [client_t, rffi.CCHARP, rffi.CCHARP, rffi.ULONG,
                       rffi.ULONG], port_t)
 ext("port_unregister", [client_t, port_t], rffi.INT)
+ext("port_get_buffer", [port_t, rffi.UINT], rffi.VOIDP)
+ext("midi_get_event_count", [rffi.VOIDP], rffi.UINT)
+ext("midi_event_get", [midi_event_tp, rffi.VOIDP, rffi.UINT], rffi.INT)

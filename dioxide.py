@@ -2,7 +2,7 @@ import math
 import sys
 import time
 
-from rpython.rlib.rarithmetic import intmask
+from rpython.rlib.rarithmetic import intmask, r_singlefloat
 from rpython.rtyper.annlowlevel import llhelper
 from rpython.rtyper.lltypesystem import lltype, rffi
 
@@ -76,18 +76,24 @@ class Config(object):
     pitchWheel = 0
     pitchWheelConfig = TRADITIONAL
 
+    def __init__(self): self.drawbars = [0] * 9
+
+    def updateSampleRate(self, srate):
+        self.inverseSampleRate = 1.0 / srate
+        self.lpfCutoff = srate
+
     def computeBend(self):
-        if self.config.pitchWheelConfig == TRADITIONAL:
-            return self.config.pitchWheel * (2.0 / 8192.0)
-        elif self.config.pitchWheel == RUDESS:
+        if self.pitchWheelConfig == TRADITIONAL:
+            return self.pitchWheel * (2.0 / 8192.0)
+        elif self.pitchWheel == RUDESS:
             # Split the pitch wheel into an upper and lower range.
             if self.pitchWheel >= 0:
-                return self.config.pitchWheel * (2.0 / 8192.0)
-            else: return self.config.pitchWheel * (12.0 / 8192.0)
-        elif self.config.pitchWheel == DIVEBOMB:
+                return self.pitchWheel * (2.0 / 8192.0)
+            else: return self.pitchWheel * (12.0 / 8192.0)
+        elif self.pitchWheel == DIVEBOMB:
             if self.pitchWheel >= 0:
-                return self.config.pitchWheel * (24.0 / 8192.0)
-            else: return self.config.pitchWheel * (36.0 / 8192.0)
+                return self.pitchWheel * (24.0 / 8192.0)
+            else: return self.pitchWheel * (36.0 / 8192.0)
         assert False
 
     # Oxygen pots and dials all go from 0 to 127.
@@ -163,31 +169,21 @@ class Config(object):
 
 ATTACK, DECAY, SUSTAIN, RELEASE = range(4)
 
-class ADSR(object):
-    def __init__(self, inverseSampleRate):
-        self.inverseSampleRate = inverseSampleRate
-    def attack(self, note, attackTime): pass
-    def decay(self, note, decayTime): pass
-    def sustain(self, note): pass
-    def release(self, note, releaseTime): pass
-
 class Element(object):
-    def __init__(self, inverseSampleRate):
+    def __init__(self, config):
         assert self.name
-        self.inverseSampleRate = inverseSampleRate
-        self.adsr = self.adsrCls(inverseSampleRate)
+        self.config = config
 
-    def applyADSR(self, note, config):
-        if note.stage == ATTACK:
-            return self.adsr.attack(self.inverseSampleRate, note,
-                                    config.attackTime)
-        elif note.stage == DECAY:
-            return self.adsr.decay(self.inverseSampleRate, note,
-                                   config.decayTime)
-        elif note.stage == SUSTAIN: return self.adsr.sustain(note)
-        elif note.stage == RELEASE:
-            return self.adsr.release(self.inverseSampleRate, note,
-                                     config.releaseTime)
+    def attack(self, note): pass
+    def decay(self, note): pass
+    def sustain(self, note): pass
+    def release(self, note): pass
+
+    def applyADSR(self, note):
+        if note.stage == ATTACK: return self.attack(note)
+        elif note.stage == DECAY: return self.decay(note)
+        elif note.stage == SUSTAIN: return self.sustain(note)
+        elif note.stage == RELEASE: return self.release(note)
         else: assert False
 
 
@@ -198,31 +194,28 @@ class Element(object):
 drawbarPitches = [0.5, 1.5, 1, 2, 3, 4, 5, 6, 8]
 pots = [1.0 / (2 ** k) for k in range(9)]
 
-class ADSRTitanium(ADSR):
+class Titanium(Element):
+    name = "Titanium"
     peak = 1.0
-    def attack(self, note, attackTime):
+
+    def attack(self, note):
         if note.volume < self.peak:
-            note.volume += self.inverseSampleRate / attackTime
+            note.volume += self.config.inverseSampleRate / self.config.attackTime
         else:
             note.volume = self.peak
             note.stage = SUSTAIN
-    def release(self, note, releaseTime):
+
+    def release(self, note):
         if note.volume > 0.0:
-            note.volume -= self.peak * self.inverseSampleRate / releaseTime
+            note.volume -= self.peak * self.config.inverseSampleRate / self.config.releaseTime
         else: note.volume = 0.0
 
-class Titanium(Element):
-    name = "Titanium"
-    adsrCls = ADSRTitanium
+    def generate(self, note, buf, nframes):
+        step = note.pitch * self.config.inverseSampleRate
 
-    def generate(self, note, config, buf):
-        step = note.pitch * self.inverseSampleRate
-
-        for i in range(len(buf)):
-            self.applyADSR(note, config)
-
+        for i in range(nframes):
             accumulator = 0.0
-            for j, drawbar in enumerate(config.drawbars):
+            for j, drawbar in enumerate(self.config.drawbars):
                 if drawbar:
                     accumulator += pots[drawbar] * nsin(note.phase * drawbarPitches[j])
 
@@ -230,7 +223,7 @@ class Titanium(Element):
             while note.phase >= 1.0: note.phase -= 1.0
 
             # Divide by the number of drawbars.
-            buf[i] = accumulator / 9.0 * note.volume
+            buf[i] = r_singlefloat(accumulator / len(self.config.drawbars) * note.volume)
 
 
 # Uranium: sawtooth lead
@@ -251,39 +244,37 @@ sawtoothLower = [sum([nsin(i * j / 1024.0) / j for j in range(1, 129)]) for i in
 
 growlbrato = LFO(80, 1, 0.0034717485095028)
 
-class ADSRUranium(ADSR):
+class Uranium(Element):
+    name = "Uranium"
     peak = 1.0
-    sustain = 0.4
-    def attack(self, note, attackTime):
+    sustained = 0.4
+
+    def attack(self, note):
         if note.volume < self.peak:
-            note.volume += self.inverseSampleRate / attackTime
+            note.volume += self.config.inverseSampleRate / self.config.attackTime
         else:
             note.volume = self.peak
             note.stage = DECAY
-    def decay(self, note, decayTime):
-        if note.volume > self.sustain:
-            note.volume -= (self.peak - self.sustain) * self.inverseSampleRate / decayTime
+
+    def decay(self, note):
+        if note.volume > self.sustained:
+            note.volume -= (self.peak - self.sustained) * self.config.inverseSampleRate / self.config.decayTime
         else:
-            note.volume = self.sustain
+            note.volume = self.sustained
             note.stage = SUSTAIN
-    def release(self, note, releaseTime):
+
+    def release(self, note):
         if note.volume > 0.0:
-            note.volume -= self.sustain * self.inverseSampleRate / releaseTime
+            note.volume -= self.sustained * self.config.inverseSampleRate / self.config.releaseTime
         else: note.volume = 0.0
 
-class Uranium(Element):
-    name = "Uranium"
-    adsrCls = ADSRUranium
-
-    def generate(self, note, config, buf):
-        for i in range(len(buf)):
-            self.applyADSR(note, config)
-
+    def generate(self, note, buf, nframes):
+        for i in range(nframes):
             growlbrato.rate = 80 if note.stage < SUSTAIN else 5
 
             # Step forward.
-            pitch = note.pitch * growlbrato.step(self.inverseSampleRate, 1)
-            step = pitch * self.inverseSampleRate
+            pitch = note.pitch * growlbrato.step(self.config.inverseSampleRate, 1)
+            step = pitch * self.config.inverseSampleRate
 
             # Update phase.
             phase = note.phase + step
@@ -302,7 +293,14 @@ class Uranium(Element):
             elif pitch > 3520.0: result = upper
             else: result = lerp(lower, upper, (pitch - 220.0) / 3300.0)
 
-            buf[i] = result * note.volume
+            buf[i] = r_singlefloat(result * note.volume)
+
+
+class Note(object):
+    pitch = phase = volume = 0.0
+    stage = ATTACK
+
+    def __init__(self, note): self.note = note
 
 
 _DIOXIDE = [None]
@@ -312,32 +310,57 @@ def getDioxide():
     if rv is None: rv = _DIOXIDE[0] = Dioxide()
     return rv
 
-def writeSound(_, stream, count):
+def sampleRateCallback(srate, _):
+    srate = intmask(srate)
+    print "JACK server sample rate callback %d" % srate
+    getDioxide().config.updateSampleRate(srate)
+    return 0
+
+def go(nframes, _):
+    print "JACK server process callback %d" % intmask(nframes)
     d = getDioxide()
-    # Update pitch only once per buffer.
+
+    midiBuf = jack.port_get_buffer(d.midiPort, nframes)
+    eventCount = jack.midi_get_event_count(midiBuf)
+    if eventCount:
+        print "Handling %d events" % eventCount
+        with lltype.scoped_alloc(jack.midi_event_t) as event:
+            for i in range(eventCount):
+                jack.midi_event_get(event, midiBuf, i)
+                ty = intmask(event.c_buffer[0]) >> 4
+                if ty == 8:
+                    # note off
+                    midiNote = intmask(event.c_buffer[1])
+                    for note in d.notes:
+                        if note.note == midiNote: note.phase = RELEASE
+                elif ty == 9:
+                    # note on
+                    midiNote = intmask(event.c_buffer[1])
+                    for note in d.notes:
+                        if note.note == midiNote: break
+                    else: d.notes.append(Note(midiNote))
+                else: print "Unknown MIDI event type %d" % ty
+
+    # Update pitch only once per processing callback, after handling MIDI
+    # events, before emitting samples.
     d.cleanAndUpdateNotes()
+    # If there are no notes, return before calling port_get_buffer(), which
+    # signals to JACK that we have samples to write.
+    # if not d.notes: return 0
 
-    if not d.notes: return
-
-    # Treat len and buf as counting shorts, not bytes.
-    # Avoids cognitive dissonance in later code.
-    count >>= 1
-    stream = rffi.cast(rffi.SHORTP, stream)
-
-    buf = [0.0] * count
-
+    waveBuf = rffi.cast(rffi.FLOATP,
+                        jack.port_get_buffer(d.wavePort, nframes))
     metal = d.metal()
-    for note in d.notes: metal.generate(note, d.config, buf)
-
-    for i, sample in enumerate(buf):
-        acc = sample * d.config.volume * -32767
-        acc = max(-32768, min(32767, acc))
-        stream[i] = acc
+    for note in d.notes:
+        metal.applyADSR(note)
+        metal.generate(note, waveBuf, intmask(nframes))
+    return 0
 
 class Dioxide(object):
     def __init__(self):
         self.config = Config()
         self.notes = []
+        self.elements = [Uranium(self.config), Titanium(self.config)]
 
     def cleanAndUpdateNotes(self):
         self.notes = [note for note in self.notes
@@ -348,13 +371,6 @@ class Dioxide(object):
 
     def metal(self): return self.elements[self.config.elementIndex]
 
-    def updateSampleRate(self, srate):
-        print "JACK server sample rate: %d" % srate
-        self.config.inverseSampleRate = 1.0 / srate
-        self.config.lpfCutoff = srate
-        self.elements = [Uranium(self.config.inverseSampleRate),
-                         Titanium(self.config.inverseSampleRate)]
-
     def setup(self):
         self.client = jack.client_open("dioxide", 0, None)
         if not self.client:
@@ -364,8 +380,10 @@ class Dioxide(object):
         self.name = rffi.charp2str(jack.get_client_name(self.client))
         print "Registered with JACK as '%s'" % self.name
 
-        self.updateSampleRate(jack.get_sample_rate(self.client))
-        # XXX wire up sample-rate callback
+        self.config.updateSampleRate(intmask(jack.get_sample_rate(self.client)))
+
+        jack.set_sample_rate_callback(self.client, sampleRateCallback, None)
+        jack.set_process_callback(self.client, go, None)
 
         self.midiPort = jack.port_register(self.client, "MIDI in",
                                            jack.DEFAULT_MIDI_TYPE,
@@ -386,8 +404,10 @@ class Dioxide(object):
 
 def main(argv):
     d = getDioxide()
+    print "Setting up JACK client..."
     if not d.setup(): return 1
 
+    print "Starting main loop..."
     try: d.start()
     except KeyboardInterrupt: pass
 
