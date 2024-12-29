@@ -2,11 +2,10 @@
   description = "A MIDI synthesizer designed for M-Audio Oxygen controllers";
 
   inputs = {
-    nixpkgs.url = "github:NixOS/nixpkgs/nixos-24.05";
+    nixpkgs.url = "github:NixOS/nixpkgs/nixos-24.11";
     flake-utils.url = "github:numtide/flake-utils";
     rpypkgs = {
       url = "github:rpypkgs/rpypkgs";
-      # url = "/home/simpson/git/rpypkgs";
       inputs = {
         nixpkgs.follows = "nixpkgs";
         flake-utils.follows = "flake-utils";
@@ -24,6 +23,8 @@
         nativeBuildInputs = with pkgs; [ autoreconfHook pkg-config ];
         buildInputs = with pkgs; [ alsaLib SDL ];
         src = ./.;
+
+        meta.license = pkgs.lib.licenses.gpl3;
       };
       dioxide1 = rpypkgs.lib.${system}.mkRPythonDerivation {
         entrypoint = "dioxide.py";
@@ -36,6 +37,8 @@
         src = ./.;
 
         buildInputs = with pkgs; [ jack2.dev ];
+
+        meta.license = pkgs.lib.licenses.gpl3;
       };
       midisineSrc = pkgs.fetchurl {
         url = "https://github.com/jackaudio/example-clients/raw/refs/heads/master/midisine.c";
@@ -55,6 +58,8 @@
           mkdir -p $out/bin/
           cp midisine $out/bin/
         '';
+
+        meta.license = pkgs.lib.licenses.gpl2Plus;
       };
     in {
       packages = {
