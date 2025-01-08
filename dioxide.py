@@ -3,6 +3,7 @@ import sys
 import time
 
 from rpython.rlib.rarithmetic import intmask, r_singlefloat
+from rpython.rlib.unroll import unrolling_iterable
 from rpython.rlib import rgil
 from rpython.rtyper.annlowlevel import llhelper
 from rpython.rtyper.lltypesystem import lltype, rffi
@@ -11,10 +12,18 @@ import jack
 
 def lerp(x, y, t): return (1.0 - t) * x + t * y
 
-pi2 = math.pi * 2
-
-# Normalized sinf, for values predivided by 2pi.
+# lolremez: sin(sqrt(x))/sqrt(x) on [0, pi/2]
+SINE_COEFFS = (2.5904885005360522e-06, -0.00019800897762795432,
+               0.008332899823351751, -0.16666647634639714, 0.999999976589882)
+def horner(z):
+    rv = 0.0
+    for c in unrolling_iterable(SINE_COEFFS): rv = rv * z + c
+    return rv
+def fastsin(z): return z * horner(z * z)
+HPI = math.pi / 2.0
 def nsin(z):
+    "Normalized sine; like math.sin(x) where z = x / 2pi."
+
     # Put z within the range.
     z, quadrant = math.modf(z * 4)
     quadrant = int(quadrant)
@@ -23,10 +32,9 @@ def nsin(z):
     flip = bool(quadrant & 2)
 
     # Do the actual integration.
-    z = 0.5 * z * (math.pi - z * z * (pi2 - 5.0 - z * z * (math.pi - 3.0)))
+    z = fastsin(z * HPI)
     if flip: z = -z
     return z
-
 
 class LowPass(object):
     x = y = 0.0
@@ -227,21 +235,44 @@ class Titanium(Element):
 
 # Uranium: sawtooth lead
 
-# Weird things I've discovered.
-# BLITs aren't necessary. This is strictly additive.
-#
-# If the number of additions is above 120 or so, stuff gets really
-# shitty-sounding. The magic number of 129 should suffice for most things.
-#
-# max_j = d->spec.freq / note->pitch / 3;
-#
-# If the number of additions is even, everything goes to shit. This helped:
-# http://www.music.mcgill.ca/~gary/307/week5/bandlimited.html
-# XXX but the number of additions here is even?
-sawtoothUpper = [sum([nsin(i * j / 1024.0) / j for j in range(1, 11)]) for i in range(1025)]
-sawtoothLower = [sum([nsin(i * j / 1024.0) / j for j in range(1, 129)]) for i in range(1025)]
+# A wavetable for a sawtooth wave.
+# The table cuts off at 1/3 of the sample rate, rather than the Nyquist 1/2,
+# to create a smoother-sounding rolloff.
+SAW_BOT = 65.0 # approx. C2
+SAW_TOP = 2090.0 # approx. C7
+# Round down, use even count, +1 for fundamental gives odd count.
+def countHarms(cutoff, freq): return (int(cutoff / freq) >> 1) << 1
+def makeTable(size, harmCount):
+    print "Table: size %d, %d harmonics" % (size, harmCount)
+    d = float(size)
+    rv = [0.0] * (size + 1)
+    for i in range(size + 1):
+        acc = 0.0
+        for j in range(1, harmCount): acc += nsin(i * j / d) / j
+        rv[i] = acc
+    return rv
+class TableSaw(object):
+    size = 1024
+    upper = lower = [0.0] * (size + 1)
 
-growlbrato = LFO(80, 1, 0.0034717485095028)
+    def updateSampleRate(self, srate):
+        max_j = srate / 3.0
+        self.upper = makeTable(self.size, countHarms(max_j, SAW_TOP))
+        self.lower = makeTable(self.size, countHarms(max_j, SAW_BOT))
+
+    def sample(self, pitch, phase):
+        # Do our sampling from the wavetable.
+        t, index = math.modf(phase * self.size)
+        index = int(index)
+        upper = lerp(self.upper[index], self.upper[index + 1], t)
+        lower = lerp(self.lower[index], self.lower[index + 1], t)
+        # And interpolate the samples.
+        if pitch < SAW_BOT: return lower
+        if pitch > SAW_TOP: return upper
+        return lerp(lower, upper, (pitch - SAW_BOT) / SAW_TOP)
+tableSaw = TableSaw()
+
+growlbrato = LFO(80, 1, 1.0 / 288)
 
 class Uranium(Element):
     name = "Uranium"
@@ -274,20 +305,7 @@ class Uranium(Element):
         pitch = note.pitch * growlbrato.step(self.config.inverseSampleRate, 1)
         step = pitch * self.config.inverseSampleRate
         note.addPhase(step)
-
-        # Do our sampling from the wavetable.
-        phase = note.phase * 1024.0
-        t, index = math.modf(phase)
-        index = int(index)
-        upper = lerp(sawtoothUpper[index], sawtoothUpper[index + 1], t)
-        lower = lerp(sawtoothLower[index], sawtoothLower[index + 1], t)
-
-        # And interpolate the samples.
-        if pitch < 220.0: result = lower
-        elif pitch > 3520.0: result = upper
-        else: result = lerp(lower, upper, (pitch - 220.0) / 3300.0)
-
-        return result * note.volume
+        return tableSaw.sample(pitch, note.phase) * note.volume
 
 
 class Note(object):
@@ -306,6 +324,7 @@ def getDioxide(): return _DIOXIDE[0]
 def sampleRateCallback(srate, _):
     srate = intmask(srate)
     getDioxide().config.updateSampleRate(srate)
+    tableSaw.updateSampleRate(srate)
     return 0
 
 def go(nframes, _):
