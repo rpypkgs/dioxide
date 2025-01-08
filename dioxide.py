@@ -12,14 +12,15 @@ import jack
 
 def lerp(x, y, t): return (1.0 - t) * x + t * y
 
-# lolremez: sin(sqrt(x))/sqrt(x) on [0, pi/2]
-SINE_COEFFS = (2.5904885005360522e-06, -0.00019800897762795432,
-               0.008332899823351751, -0.16666647634639714, 0.999999976589882)
+# lolremez --degree 4 --range 1e-50:pi*pi/4 "(sin(sqrt(x))-sqrt(x))/(x*sqrt(x))" "1/(x*sqrt(x))"
+SINE_COEFFS = (-2.3846694009434756e-8, 2.7522618854091482e-6,
+               -1.9840804039196206e-4, +8.333330495671426e-3,
+               -1.6666666606466992e-1)
 def horner(z):
     rv = 0.0
     for c in unrolling_iterable(SINE_COEFFS): rv = rv * z + c
     return rv
-def fastsin(z): return z * horner(z * z)
+def fastsin(z): return horner(z * z) * z + z
 HPI = math.pi / 2.0
 def nsin(z):
     "Normalized sine; like math.sin(x) where z = x / 2pi."
@@ -266,10 +267,11 @@ class TableSaw(object):
         index = int(index)
         upper = lerp(self.upper[index], self.upper[index + 1], t)
         lower = lerp(self.lower[index], self.lower[index + 1], t)
-        # And interpolate the samples.
-        if pitch < SAW_BOT: return lower
-        if pitch > SAW_TOP: return upper
-        return lerp(lower, upper, (pitch - SAW_BOT) / SAW_TOP)
+        # And interpolate the samples. Since pitch is usually on the keyboard
+        # (and thus between bottom and top), clamp it and lerp to avoid a
+        # conditional check.
+        t = max(min(pitch, SAW_TOP), SAW_BOT)
+        return lerp(lower, upper, (t - SAW_BOT) / SAW_TOP)
 tableSaw = TableSaw()
 
 growlbrato = LFO(80, 1, 1.0 / 288)
