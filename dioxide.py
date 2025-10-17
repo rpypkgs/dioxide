@@ -190,13 +190,6 @@ class Element(object):
     def sustain(self, note): pass
     def release(self, note): pass
 
-    def applyADSR(self, note):
-        if note.stage == ATTACK: return self.attack(note)
-        elif note.stage == DECAY: return self.decay(note)
-        elif note.stage == SUSTAIN: return self.sustain(note)
-        elif note.stage == RELEASE: return self.release(note)
-        else: assert False
-
 
 # Titanium: Hammond-style organ
 
@@ -274,12 +267,14 @@ class TableSaw(object):
         return lerp(lower, upper, (t - SAW_BOT) / SAW_TOP)
 tableSaw = TableSaw()
 
-growlbrato = LFO(80, 1, 1.0 / 288)
-
 class Uranium(Element):
     name = "Uranium"
     peak = 1.0
     sustained = 0.4
+
+    def __init__(self, config):
+        self.config = config
+        self.growlbrato = LFO(80, 1, 1.0 / 288)
 
     def attack(self, note):
         if note.volume < self.peak:
@@ -301,10 +296,10 @@ class Uranium(Element):
         else: note.volume = 0.0
 
     def generate(self, note):
-        growlbrato.rate = 80 if note.stage < SUSTAIN else 5
+        self.growlbrato.rate = 80 if note.stage < SUSTAIN else 5
 
         # Step forward.
-        pitch = note.pitch * growlbrato.step(self.config.inverseSampleRate, 1)
+        pitch = note.pitch * self.growlbrato.step(self.config.inverseSampleRate, 1)
         step = pitch * self.config.inverseSampleRate
         note.addPhase(step)
         return tableSaw.sample(pitch, note.phase) * note.volume
@@ -314,10 +309,14 @@ class Note(object):
     pitch = phase = volume = 0.0
     stage = ATTACK
 
-    def addPhase(self, step):
-        phase = self.phase + step
-        if phase >= 1.0: phase -= 1.0
-        self.phase = phase
+    def addPhase(self, step): self.phase, _ = math.modf(self.phase + step)
+
+    def attenuateTo(self, metal):
+        if self.stage == ATTACK: return metal.attack(self)
+        elif self.stage == DECAY: return metal.decay(self)
+        elif self.stage == SUSTAIN: return metal.sustain(self)
+        elif self.stage == RELEASE: return metal.release(self)
+        else: assert False
 
 
 _DIOXIDE = [None]
@@ -374,7 +373,7 @@ def go(nframes, _):
 
             acc = 0.0
             for note in d.notes.itervalues():
-                metal.applyADSR(note)
+                note.attenuateTo(metal)
                 acc += metal.generate(note)
             waveBuf[i] = r_singlefloat(acc)
 
