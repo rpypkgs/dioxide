@@ -2,7 +2,7 @@
   description = "A MIDI synthesizer designed for M-Audio Oxygen controllers";
 
   inputs = {
-    nixpkgs.url = "github:NixOS/nixpkgs/nixos-24.11";
+    nixpkgs.url = "github:NixOS/nixpkgs/nixos-26.05";
     flake-utils.url = "github:numtide/flake-utils";
     rpypkgs = {
       url = "github:rpypkgs/rpypkgs";
@@ -69,7 +69,7 @@
       };
       devShells.default = pkgs.mkShell {
         packages = with pkgs; [
-          gdb linuxPackages.perf ltrace
+          gdb perf ltrace
         ];
       };
     });

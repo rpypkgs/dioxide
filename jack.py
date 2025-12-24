@@ -45,8 +45,7 @@ midi_event_tp = lltype.Ptr(midi_event_t)
 def ext(n, *args):
     globals()[n] = rffi.llexternal("jack_" + n, *args, compilation_info=eci)
 
-
-ext("client_open", [rffi.CCHARP, rffi.INT, rffi.VOIDP], client_t)
+ext("client_open", [rffi.CCHARP, rffi.INT, rffi.UINTP], client_t)
 ext("get_client_name", [client_t], rffi.CCHARP)
 ext("get_sample_rate", [client_t], rffi.UINT)
 ext("get_buffer_size", [client_t], rffi.UINT)

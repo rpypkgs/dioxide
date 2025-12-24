@@ -400,10 +400,11 @@ class Dioxide(object):
     def metal(self): return self.elements[self.config.elementIndex]
 
     def setup(self):
-        self.client = jack.client_open("dioxide", 0, None)
-        if not self.client:
-            print "Couldn't connect to JACK!"
-            return False
+        with lltype.scoped_alloc(rffi.UINTP.TO, 1) as status:
+            self.client = jack.client_open("dioxide", 0, status)
+            if not self.client:
+                print "Couldn't connect to JACK: Status code", hex(intmask(status[0]))
+                return False
 
         self.name = rffi.charp2str(jack.get_client_name(self.client))
         print "Registered with JACK as '%s'" % self.name
